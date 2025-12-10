@@ -3,6 +3,56 @@ import os
 import json
 
 
+class CompileResultDialog(wx.Dialog):
+    """编译结果对话框（非模态）"""
+    def __init__(self, parent, frag_file_name, output):
+        super().__init__(parent, title=f"编译结果 - {frag_file_name}", size=(800, 500))
+        
+        # 设置对话框样式，允许同时打开多个
+        self.SetExtraStyle(wx.DIALOG_EX_CONTEXTHELP)
+        
+        # 创建控件
+        text_ctrl = wx.TextCtrl(self, value=output, 
+                               style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL | wx.TE_RICH2)
+        text_ctrl.SetFont(wx.Font(10, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        
+        # 添加关闭按钮
+        close_btn = wx.Button(self, label="关闭")
+        close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+        
+        # 添加复制按钮
+        copy_btn = wx.Button(self, label="复制结果")
+        copy_btn.Bind(wx.EVT_BUTTON, lambda e: self.copy_to_clipboard(output))
+        
+        # 布局
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(text_ctrl, proportion=1, flag=wx.EXPAND | wx.ALL, border=10)
+        
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        btn_sizer.Add(copy_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
+        btn_sizer.Add(close_btn, flag=wx.ALIGN_CENTER)
+        
+        sizer.Add(btn_sizer, flag=wx.ALIGN_CENTER | wx.BOTTOM, border=10)
+        self.SetSizer(sizer)
+        
+        # 居中显示
+        self.Centre()
+        
+        # 绑定关闭事件
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+    
+    def on_close(self, event):
+        """处理关闭事件"""
+        self.Destroy()
+    
+    def copy_to_clipboard(self, text):
+        """复制文本到剪贴板"""
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(text))
+            wx.TheClipboard.Close()
+            # wx.MessageBox("结果已复制到剪贴板", "提示", wx.OK | wx.ICON_INFORMATION)
+
+
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
     VERSION = "1.0.0"
@@ -187,10 +237,23 @@ class ShaderBrowser(wx.Frame):
             )
             return
         
+        # 在新线程中执行编译，避免界面卡顿
+        import threading
+        thread = threading.Thread(
+            target=self.compile_frag_in_thread,
+            args=(frag_file_name, frag_file_path, malisc_path)
+        )
+        thread.daemon = True
+        thread.start()
+    
+    def compile_frag_in_thread(self, frag_file_name, frag_file_path, malisc_path):
+        """在新线程中编译frag文件并显示结果"""
         try:
             # 使用powershell执行malisc.exe
             cmd = f'powershell -Command "& \'{malisc_path}\' \'{frag_file_path}\'"'
-            self.status_bar.SetStatusText(f"正在编译: {frag_file_name}")
+            
+            # 在主线程中更新状态栏
+            wx.CallAfter(self.status_bar.SetStatusText, f"正在编译: {frag_file_name}")
             
             # 执行命令
             import subprocess
@@ -203,20 +266,22 @@ class ShaderBrowser(wx.Frame):
                 if result.stderr:
                     output += f"\n错误信息: {result.stderr}"
             
-            # 显示编译结果对话框
-            dlg = wx.Dialog(self, title=f"编译结果 - {frag_file_name}", size=(800, 400))
-            text_ctrl = wx.TextCtrl(dlg, value=output, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL)
-            sizer = wx.BoxSizer(wx.VERTICAL)
-            sizer.Add(text_ctrl, proportion=1, flag=wx.EXPAND | wx.ALL, border=10)
-            dlg.SetSizer(sizer)
-            dlg.ShowModal()
-            dlg.Destroy()
+            # 在主线程中创建和显示非模态对话框
+            wx.CallAfter(self.show_compile_result, frag_file_name, output)
             
-            self.status_bar.SetStatusText(f"编译完成: {frag_file_name}")
+            # 在主线程中更新状态栏
+            wx.CallAfter(self.status_bar.SetStatusText, f"编译完成: {frag_file_name}")
             
         except Exception as e:
-            self.status_bar.SetStatusText(f"编译失败: {str(e)}")
-            wx.MessageBox(f"编译失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+            error_msg = f"编译失败: {str(e)}"
+            wx.CallAfter(self.status_bar.SetStatusText, error_msg)
+            wx.CallAfter(wx.MessageBox, error_msg, "错误", wx.OK | wx.ICON_ERROR)
+    
+    def show_compile_result(self, frag_file_name, output):
+        """显示编译结果对话框（非模态）"""
+        # 创建非模态对话框
+        dlg = CompileResultDialog(self, frag_file_name, output)
+        dlg.Show()
     
     def find_malisc_exe(self):
         """查找malisc.exe的路径"""
