@@ -1,0 +1,5 @@
+/.idea
+*.frag
+/build
+/Mali_Offline_Compiler_v5.6.0_Windows
+/dist
