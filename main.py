@@ -61,7 +61,7 @@ class ShaderBrowser(wx.Frame):
     def __init__(self, parent, title):
         # 在标题中添加版本号
         full_title = f"{title} v{self.VERSION}"
-        super(ShaderBrowser, self).__init__(parent, title=full_title, size=(800, 500))
+        super(ShaderBrowser, self).__init__(parent, title=full_title, size=(800, 700))
 
         self.InitUI()
         self.Centre()
@@ -506,7 +506,7 @@ class ShaderBrowser(wx.Frame):
             self.status_bar.SetStatusText(f"加载frag文件失败: {str(e)}")
     
     def load_shader_files(self, directory):
-        """加载指定目录中的所有 .shader 文件"""
+        """加载指定目录中的所有 .shader 文件，并刷新frag列表"""
         self.file_list.Clear()
         
         # 保存路径到配置文件
@@ -531,11 +531,11 @@ class ShaderBrowser(wx.Frame):
                 shader_files.sort()  # 按字母顺序排序
                 self.file_list.Set(shader_files)
                 self.status_bar.SetStatusText(f"找到 {len(shader_files)} 个 .shader 文件")
-                
-                # 同时加载frag文件
-                self.load_frag_files(directory)
             else:
                 self.status_bar.SetStatusText("未找到 .shader 文件")
+            
+            # 无论是否找到.shader文件，都尝试加载frag文件
+            self.load_frag_files(directory)
                 
         except Exception as e:
             self.status_bar.SetStatusText(f"错误: {str(e)}")
