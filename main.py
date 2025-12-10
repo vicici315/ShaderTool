@@ -81,9 +81,13 @@ class ShaderBrowser(wx.Frame):
 
         self.browse_btn = wx.Button(panel, label="浏览路径:", size=(68, -1))
         self.browse_btn.Bind(wx.EVT_BUTTON, self.on_browse)
+        # 设置橙黄色背景
+        self.browse_btn.SetBackgroundColour(wx.Colour(255, 225, 110))  # 橙黄色
         hbox1.Add(self.browse_btn, flag=wx.EXPAND)
         self.path_text = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
         self.path_text.Bind(wx.EVT_TEXT_ENTER, self.on_path_enter)
+        # 设置浅黄色背景
+        self.path_text.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
         hbox1.Add(self.path_text, proportion=1, flag=wx.EXPAND)
         
         vbox.Add(hbox1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
@@ -93,10 +97,14 @@ class ShaderBrowser(wx.Frame):
 
         self.workFrag_btn = wx.Button(panel, label="分离frag")
         self.workFrag_btn.Bind(wx.EVT_BUTTON, self.on_separate_frag)
+        # 设置浅蓝色背景
+        self.workFrag_btn.SetBackgroundColour(wx.Colour(173, 216, 230))  # 浅蓝色
         hbox2.Add(self.workFrag_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
         
         self.refresh_btn = wx.Button(panel, label="刷新")
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
+        # 设置绿色背景
+        self.refresh_btn.SetBackgroundColour(wx.Colour(144, 238, 144))  # 浅绿色
         hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
         
         vbox.Add(hbox2, flag=wx.ALIGN_LEFT | wx.TOP, border=10)
