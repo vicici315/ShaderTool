@@ -45,6 +45,10 @@ class ShaderBrowser(wx.Frame):
         self.workFrag_btn.Bind(wx.EVT_BUTTON, self.on_separate_frag)
         hbox2.Add(self.workFrag_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
         
+        self.refresh_btn = wx.Button(panel, label="刷新")
+        self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
+        hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+        
         vbox.Add(hbox2, flag=wx.ALIGN_LEFT | wx.TOP, border=10)
         
         # 第三行：双列表标签行
@@ -68,6 +72,7 @@ class ShaderBrowser(wx.Frame):
         
         # 右侧：frag 列表框
         self.frag_list = wx.ListBox(panel, style=wx.LB_SINGLE | wx.LB_HSCROLL)
+        self.frag_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_frag_double_click)
         hbox_lists.Add(self.frag_list, proportion=1, flag=wx.EXPAND | wx.LEFT, border=10)
         
         vbox.Add(hbox_lists, proportion=1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
@@ -150,6 +155,105 @@ class ShaderBrowser(wx.Frame):
                 self.load_shader_files(current_dir)
             except:
                 pass
+    
+    def on_frag_double_click(self, event):
+        """处理frag列表双击事件：使用malisc.exe编译选中的frag文件"""
+        selection = self.frag_list.GetSelection()
+        if selection == wx.NOT_FOUND:
+            wx.MessageBox("请先在右侧列表中选择一个.frag文件", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        frag_file_name = self.frag_list.GetString(selection)
+        current_path = self.path_text.GetValue()
+        if not current_path:
+            wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        # 构建frag文件的完整路径
+        frags_dir = os.path.join(current_path, "Frags")
+        frag_file_path = os.path.join(frags_dir, frag_file_name)
+        
+        if not os.path.exists(frag_file_path):
+            wx.MessageBox(f"文件不存在: {frag_file_path}", "错误", wx.OK | wx.ICON_ERROR)
+            return
+        
+        # 查找malisc.exe
+        malisc_path = self.find_malisc_exe()
+        if not malisc_path:
+            wx.MessageBox(
+                "未找到 malisc.exe\n"
+                "请确保 Mali_Offline_Compiler_Windows 目录存在且包含 malisc.exe",
+                "错误", wx.OK | wx.ICON_ERROR
+            )
+            return
+        
+        try:
+            # 使用powershell执行malisc.exe
+            cmd = f'powershell -Command "& \'{malisc_path}\' \'{frag_file_path}\'"'
+            self.status_bar.SetStatusText(f"正在编译: {frag_file_name}")
+            
+            # 执行命令
+            import subprocess
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8')
+            
+            # 显示结果
+            output = result.stdout
+            if result.returncode != 0:
+                output += f"\n\n错误代码: {result.returncode}"
+                if result.stderr:
+                    output += f"\n错误信息: {result.stderr}"
+            
+            # 显示编译结果对话框
+            dlg = wx.Dialog(self, title=f"编译结果 - {frag_file_name}", size=(800, 400))
+            text_ctrl = wx.TextCtrl(dlg, value=output, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL)
+            sizer = wx.BoxSizer(wx.VERTICAL)
+            sizer.Add(text_ctrl, proportion=1, flag=wx.EXPAND | wx.ALL, border=10)
+            dlg.SetSizer(sizer)
+            dlg.ShowModal()
+            dlg.Destroy()
+            
+            self.status_bar.SetStatusText(f"编译完成: {frag_file_name}")
+            
+        except Exception as e:
+            self.status_bar.SetStatusText(f"编译失败: {str(e)}")
+            wx.MessageBox(f"编译失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+    
+    def find_malisc_exe(self):
+        """查找malisc.exe的路径"""
+        # 可能的malisc.exe路径
+        possible_paths = [
+            # 在当前目录下的Mali_Offline_Compiler_Windows目录
+            os.path.join(os.getcwd(), "Mali_Offline_Compiler_Windows", "malisc.exe"),
+            # 在应用程序目录下的Mali_Offline_Compiler_Windows目录
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "Mali_Offline_Compiler_Windows", "malisc.exe"),
+            # 在系统PATH中
+            "malisc.exe",
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return os.path.abspath(path)
+        
+        return None
+    
+    def on_refresh(self, event):
+        """处理刷新按钮点击事件：重新加载当前目录的文件"""
+        current_path = self.path_text.GetValue()
+        if not current_path:
+            wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        if not os.path.isdir(current_path):
+            wx.MessageBox(f"路径不是有效的目录: {current_path}", "错误", wx.OK | wx.ICON_ERROR)
+            return
+        
+        try:
+            self.status_bar.SetStatusText("正在刷新文件列表...")
+            self.load_shader_files(current_path)
+            self.status_bar.SetStatusText(f"刷新完成: {current_path}")
+        except Exception as e:
+            self.status_bar.SetStatusText(f"刷新失败: {str(e)}")
+            wx.MessageBox(f"刷新失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
     
     def on_separate_frag(self, event):
         """处理分离frag按钮点击事件"""
