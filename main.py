@@ -6,7 +6,7 @@ import json
 class CompileResultDialog(wx.Dialog):
     """编译结果对话框（非模态）"""
     def __init__(self, parent, frag_file_name, output):
-        super().__init__(parent, title=f"编译结果 - {frag_file_name}", size=(800, 500))
+        super().__init__(parent, title=f"编译结果 - {frag_file_name}", size=(800, 550))
         
         # 设置对话框样式，允许同时打开多个
         self.SetExtraStyle(wx.DIALOG_EX_CONTEXTHELP)
@@ -49,15 +49,52 @@ class CompileResultDialog(wx.Dialog):
         copy_btn.Bind(wx.EVT_BUTTON, lambda e: self.copy_to_clipboard(output))
         copy_btn.SetBackgroundColour(wx.Colour(155, 225, 110))
         
+        # 计算Longest Path Cycles三个值的和
+        cycles_sum = self.calculate_longest_path_cycles_sum(output)
+        
+        # 创建结果显示文本
+        result_text = ""
+        if cycles_sum is not None:
+            result_text = f"Longest Path Cycles 总和: {cycles_sum}"
+        else:
+            result_text = "Longest Path Cycles: --"
+        
+        result_label = wx.StaticText(self, label=result_text)
+        
+        # 根据总和结果分级设置字体颜色
+        if cycles_sum is not None:
+            if cycles_sum <= 40:
+                # 40以下：绿色 - 良好性能
+                result_label.SetForegroundColour(wx.Colour(0, 180, 0))  # 绿色
+            elif cycles_sum <= 79:
+                # 41~79：橙色 - 中等性能
+                result_label.SetForegroundColour(wx.Colour(255, 140, 0))  # 橙色
+            else:
+                # 80以上：红色 - 需要优化
+                result_label.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
+        else:
+            # 无数据：蓝色
+            result_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+        
+        result_label.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        
         # 布局
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(text_ctrl, proportion=1, flag=wx.EXPAND | wx.ALL, border=10)
         
+        # 底部按钮和结果区域
+        bottom_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        
+        # 左侧：结果文本
+        bottom_sizer.Add(result_label, proportion=1, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
+        
+        # 右侧：按钮
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         btn_sizer.Add(copy_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         btn_sizer.Add(close_btn, flag=wx.ALIGN_CENTER)
+        bottom_sizer.Add(btn_sizer, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         
-        sizer.Add(btn_sizer, flag=wx.ALIGN_CENTER | wx.BOTTOM, border=10)
+        sizer.Add(bottom_sizer, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=10)
         self.SetSizer(sizer)
         
         # 居中显示
@@ -65,6 +102,36 @@ class CompileResultDialog(wx.Dialog):
         
         # 绑定关闭事件
         self.Bind(wx.EVT_CLOSE, self.on_close)
+    
+    def calculate_longest_path_cycles_sum(self, output):
+        """计算Longest Path Cycles三个值的和"""
+        try:
+            # 查找"Longest Path Cycles:"在文本中的位置
+            lines = output.split('\n')
+            for line in lines:
+                if "Longest Path Cycles:" in line:
+                    # 提取冒号后面的部分
+                    parts = line.split("Longest Path Cycles:")
+                    if len(parts) > 1:
+                        values_str = parts[1].strip()
+                        
+                        # 提取所有数字（可能用逗号、空格分隔）
+                        import re
+                        numbers = re.findall(r'\d+', values_str)
+                        
+                        if len(numbers) >= 3:
+                            # 取前三个数字
+                            try:
+                                num1 = int(numbers[0])
+                                num2 = int(numbers[1])
+                                num3 = int(numbers[2])
+                                return num1 + num2 + num3
+                            except ValueError:
+                                return None
+            return None
+        except Exception as e:
+            print(f"计算Longest Path Cycles总和时出错: {e}")
+            return None
     
     def on_close(self, event):
         """处理关闭事件"""
