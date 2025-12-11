@@ -292,18 +292,20 @@ class ShaderBrowser(wx.Frame):
         
         # 第四行：双列表框
         hbox_lists = wx.BoxSizer(wx.HORIZONTAL)
-        
+
         # 左侧：文件列表框
         self.file_list = wx.ListBox(panel, style=wx.LB_SINGLE | wx.LB_HSCROLL)
         self.file_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_file_double_click)
+        self.file_list.SetMinSize((0, -1))  # 👈 关键：允许水平方向被压缩
         hbox_lists.Add(self.file_list, proportion=1, flag=wx.EXPAND)
-        
+
         # 右侧：frag 列表框
         self.frag_list = wx.ListBox(panel, style=wx.LB_SINGLE | wx.LB_HSCROLL)
         self.frag_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_frag_double_click)
-        self.frag_list.Bind(wx.EVT_LISTBOX, self.on_frag_click)  # 添加单击事件
-        self.frag_list.Bind(wx.EVT_CHAR_HOOK, self.on_frag_char_hook)  # 使用CHAR_HOOK捕获所有键盘事件
-        hbox_lists.Add(self.frag_list, proportion=1, flag=wx.EXPAND | wx.LEFT, border=10)
+        self.frag_list.Bind(wx.EVT_LISTBOX, self.on_frag_click)
+        self.frag_list.Bind(wx.EVT_CHAR_HOOK, self.on_frag_char_hook)
+        self.frag_list.SetMinSize((0, -1))  # 👈 同样设置
+        hbox_lists.Add(self.frag_list, proportion=1, flag=wx.EXPAND)
         
         vbox.Add(hbox_lists, proportion=1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
         
