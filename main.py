@@ -164,7 +164,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "1.2"
+    VERSION = "1.3"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -299,13 +299,13 @@ class ShaderBrowser(wx.Frame):
         self.file_list.SetMinSize((0, -1))  # 👈 关键：允许水平方向被压缩
         hbox_lists.Add(self.file_list, proportion=1, flag=wx.EXPAND)
 
-        # 右侧：frag 列表框
+        # 右侧：frag 列表框（与左侧列表之间添加10像素间距）
         self.frag_list = wx.ListBox(panel, style=wx.LB_SINGLE | wx.LB_HSCROLL)
         self.frag_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_frag_double_click)
         self.frag_list.Bind(wx.EVT_LISTBOX, self.on_frag_click)
         self.frag_list.Bind(wx.EVT_CHAR_HOOK, self.on_frag_char_hook)
         self.frag_list.SetMinSize((0, -1))  # 👈 同样设置
-        hbox_lists.Add(self.frag_list, proportion=1, flag=wx.EXPAND)
+        hbox_lists.Add(self.frag_list, proportion=1, flag=wx.EXPAND | wx.LEFT, border=6)
         
         vbox.Add(hbox_lists, proportion=1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
         
