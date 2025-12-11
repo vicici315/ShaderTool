@@ -17,7 +17,7 @@ class CompileResultDialog(wx.Dialog):
         # 使用与PowerShell相同的字体，确保显示一致性
         try:
             # PowerShell常用字体优先级：Lucida Console -> Consolas -> 系统等宽字体
-            font_names = ["Lucida Console", "Consolas", "Courier New"]
+            font_names = ["Cascadia Mono", "Consolas", "Courier New"]
             selected_font = None
             
             for font_name in font_names:
@@ -88,12 +88,64 @@ class ShaderBrowser(wx.Frame):
         full_title = f"{title} v{self.VERSION}"
         super(ShaderBrowser, self).__init__(parent, title=full_title, size=(800, 700))
 
+        # 设置窗口图标
+        self.SetIcon(self.load_icon())
+        
         self.InitUI()
         self.Centre()
         self.Show()
         
         # 加载保存的路径
         self.load_saved_path()
+    
+    def load_icon(self):
+        """加载窗口图标"""
+        try:
+            # 尝试加载mm1.ico文件
+            icon_path = "mm1.ico"
+            if os.path.exists(icon_path):
+                icon = wx.Icon(icon_path, wx.BITMAP_TYPE_ICO)
+                if icon.IsOk():
+                    return icon
+            
+            # 如果文件不存在或加载失败，创建默认图标
+            return self.create_default_icon()
+        except Exception as e:
+            print(f"加载图标失败: {e}")
+            return self.create_default_icon()
+    
+    def create_default_icon(self):
+        """创建默认图标"""
+        try:
+            # 创建一个简单的默认图标（16x16和32x32）
+            icon = wx.Icon()
+            
+            # 创建16x16位图
+            bmp16 = wx.Bitmap(16, 16)
+            dc = wx.MemoryDC(bmp16)
+            dc.SetBackground(wx.Brush(wx.Colour(0, 120, 215)))  # 蓝色背景
+            dc.Clear()
+            dc.SetTextForeground(wx.Colour(255, 255, 255))  # 白色文字
+            dc.SetFont(wx.Font(8, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+            dc.DrawText("S", 4, 2)  # 绘制"S"表示Shader
+            dc.SelectObject(wx.NullBitmap)
+            
+            # 创建32x32位图  
+            bmp32 = wx.Bitmap(32, 32)
+            dc = wx.MemoryDC(bmp32)
+            dc.SetBackground(wx.Brush(wx.Colour(0, 120, 215)))  # 蓝色背景
+            dc.Clear()
+            dc.SetTextForeground(wx.Colour(255, 255, 255))  # 白色文字
+            dc.SetFont(wx.Font(14, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+            dc.DrawText("S", 10, 6)  # 绘制"S"表示Shader
+            dc.SelectObject(wx.NullBitmap)
+            
+            # 将16x16位图复制到图标
+            icon.CopyFromBitmap(bmp16)
+            return icon
+        except:
+            # 如果创建默认图标也失败，返回空图标
+            return wx.Icon()
     
     def InitUI(self):
         panel = wx.Panel(self)
