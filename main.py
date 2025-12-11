@@ -14,26 +14,40 @@ class CompileResultDialog(wx.Dialog):
         # 创建控件
         text_ctrl = wx.TextCtrl(self, value=output, 
                                style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP | wx.TE_RICH2)
-        # 使用代码常用字体（Consolas），确保字符等宽对齐
+        # 使用与PowerShell相同的字体，确保显示一致性
         try:
-            # 尝试使用Consolas字体，这是Windows上常用的编程字体
-            font = wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, 
-                          faceName="Consolas")
-            if not font.IsOk():
-                # 如果Consolas不可用，使用Courier New
-                font = wx.Font(11, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
-            text_ctrl.SetFont(font)
+            # PowerShell常用字体优先级：Lucida Console -> Consolas -> 系统等宽字体
+            font_names = ["Lucida Console", "Consolas", "Courier New"]
+            selected_font = None
+            
+            for font_name in font_names:
+                try:
+                    font = wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,
+                                  wx.FONTWEIGHT_NORMAL, faceName=font_name)
+                    if font.IsOk():
+                        selected_font = font
+                        break
+                except:
+                    continue
+            
+            if selected_font:
+                text_ctrl.SetFont(selected_font)
+            else:
+                # 所有指定字体都不可用时使用系统等宽字体
+                text_ctrl.SetFont(wx.Font(10, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
         except:
             # 异常情况下使用系统等宽字体
-            text_ctrl.SetFont(wx.Font(11, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+            text_ctrl.SetFont(wx.Font(10, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
         
         # 添加关闭按钮
         close_btn = wx.Button(self, label="关闭")
         close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+        close_btn.SetBackgroundColour(wx.Colour(245, 95, 90))
         
         # 添加复制按钮
         copy_btn = wx.Button(self, label="复制结果")
         copy_btn.Bind(wx.EVT_BUTTON, lambda e: self.copy_to_clipboard(output))
+        copy_btn.SetBackgroundColour(wx.Colour(155, 225, 110))
         
         # 布局
         sizer = wx.BoxSizer(wx.VERTICAL)
