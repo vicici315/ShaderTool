@@ -13,8 +13,19 @@ class CompileResultDialog(wx.Dialog):
         
         # 创建控件
         text_ctrl = wx.TextCtrl(self, value=output, 
-                               style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL | wx.TE_RICH2)
-        text_ctrl.SetFont(wx.Font(10, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+                               style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP | wx.TE_RICH2)
+        # 使用代码常用字体（Consolas），确保字符等宽对齐
+        try:
+            # 尝试使用Consolas字体，这是Windows上常用的编程字体
+            font = wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, 
+                          faceName="Consolas")
+            if not font.IsOk():
+                # 如果Consolas不可用，使用Courier New
+                font = wx.Font(11, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
+            text_ctrl.SetFont(font)
+        except:
+            # 异常情况下使用系统等宽字体
+            text_ctrl.SetFont(wx.Font(11, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
         
         # 添加关闭按钮
         close_btn = wx.Button(self, label="关闭")
