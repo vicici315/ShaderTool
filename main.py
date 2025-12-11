@@ -14,10 +14,13 @@ class CompileResultDialog(wx.Dialog):
         # 创建控件
         text_ctrl = wx.TextCtrl(self, value=output, 
                                style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP | wx.TE_RICH2)
+        # 设置浅灰色背景
+        text_ctrl.SetBackgroundColour(wx.Colour(200, 200, 200))
         # 使用与PowerShell相同的字体，确保显示一致性
         try:
             # PowerShell常用字体优先级：Lucida Console -> Consolas -> 系统等宽字体
             font_names = ["Cascadia Mono", "Consolas", "Courier New"]
+            # font_names = ["Lucida Console", "Consolas", "Courier New"]
             selected_font = None
             
             for font_name in font_names:
@@ -40,9 +43,9 @@ class CompileResultDialog(wx.Dialog):
             text_ctrl.SetFont(wx.Font(10, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
         
         # 添加关闭按钮
-        close_btn = wx.Button(self, label="关闭")
-        close_btn.Bind(wx.EVT_BUTTON, self.on_close)
-        close_btn.SetBackgroundColour(wx.Colour(245, 95, 90))
+        self.close_btn = wx.Button(self, label="关闭")
+        self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+        self.close_btn.SetBackgroundColour(wx.Colour(245, 95, 90))
         
         # 添加复制按钮
         copy_btn = wx.Button(self, label="复制结果")
@@ -91,7 +94,7 @@ class CompileResultDialog(wx.Dialog):
         # 右侧：按钮
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         btn_sizer.Add(copy_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
-        btn_sizer.Add(close_btn, flag=wx.ALIGN_CENTER)
+        btn_sizer.Add(self.close_btn, flag=wx.ALIGN_CENTER)
         bottom_sizer.Add(btn_sizer, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         
         sizer.Add(bottom_sizer, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=10)
@@ -102,6 +105,12 @@ class CompileResultDialog(wx.Dialog):
         
         # 绑定关闭事件
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        
+        # 设置默认按钮为关闭按钮
+        self.close_btn.SetDefault()
+        
+        # 在对话框显示后将焦点设置到关闭按钮
+        self.Bind(wx.EVT_SHOW, self.on_show)
     
     def calculate_longest_path_cycles_sum(self, output):
         """计算Longest Path Cycles三个值的和"""
@@ -133,11 +142,19 @@ class CompileResultDialog(wx.Dialog):
             print(f"计算Longest Path Cycles总和时出错: {e}")
             return None
     
+    def on_show(self, event):
+        """处理对话框显示事件：将焦点设置到关闭按钮"""
+        if event.IsShown():
+            # 延迟设置焦点，确保对话框完全显示
+            wx.CallAfter(self.close_btn.SetFocus)
+        event.Skip()
+    
     def on_close(self, event):
         """处理关闭事件"""
         self.Destroy()
     
-    def copy_to_clipboard(self, text):
+    @staticmethod
+    def copy_to_clipboard(text):
         """复制文本到剪贴板"""
         if wx.TheClipboard.Open():
             wx.TheClipboard.SetData(wx.TextDataObject(text))
@@ -147,7 +164,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "1.0.0"
+    VERSION = "1.2"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -256,11 +273,20 @@ class ShaderBrowser(wx.Frame):
         # 第三行：双列表标签行
         hbox_labels = wx.BoxSizer(wx.HORIZONTAL)
         
-        file_label = wx.StaticText(panel, label=".shader 文件列表:")
+        file_label = wx.StaticText(panel, label="shader 文件列表:")
         hbox_labels.Add(file_label, proportion=1, flag=wx.EXPAND)
         
-        frag_label = wx.StaticText(panel, label="分离的 frag 列表:")
-        hbox_labels.Add(frag_label, proportion=1, flag=wx.EXPAND)
+        # frag标签和总和显示区域
+        frag_label_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        frag_label = wx.StaticText(panel, label="frag 列表:")
+        frag_label_sizer.Add(frag_label, flag=wx.ALIGN_CENTER_VERTICAL)
+        
+        # 添加总和显示文本（初始为空）
+        self.frag_sum_label = wx.StaticText(panel, label="")
+        self.frag_sum_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        frag_label_sizer.Add(self.frag_sum_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
+        
+        hbox_labels.Add(frag_label_sizer, proportion=1, flag=wx.EXPAND)
         
         vbox.Add(hbox_labels, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
         
@@ -275,6 +301,8 @@ class ShaderBrowser(wx.Frame):
         # 右侧：frag 列表框
         self.frag_list = wx.ListBox(panel, style=wx.LB_SINGLE | wx.LB_HSCROLL)
         self.frag_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_frag_double_click)
+        self.frag_list.Bind(wx.EVT_LISTBOX, self.on_frag_click)  # 添加单击事件
+        self.frag_list.Bind(wx.EVT_CHAR_HOOK, self.on_frag_char_hook)  # 使用CHAR_HOOK捕获所有键盘事件
         hbox_lists.Add(self.frag_list, proportion=1, flag=wx.EXPAND | wx.LEFT, border=10)
         
         vbox.Add(hbox_lists, proportion=1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
@@ -319,7 +347,7 @@ class ShaderBrowser(wx.Frame):
             config = {"last_path": path}
             with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
-            self.status_bar.SetStatusText(f"路径已保存到配置文件: {self.CONFIG_FILE}")
+            self.status_bar.SetStatusText(f"路径已保存: {self.CONFIG_FILE}")
         except Exception as e:
             self.status_bar.SetStatusText(f"保存配置文件失败: {str(e)}")
     
@@ -336,7 +364,7 @@ class ShaderBrowser(wx.Frame):
                         # 使用保存的路径
                         self.path_text.SetValue(last_path)
                         self.load_shader_files(last_path)
-                        self.status_bar.SetStatusText(f"已加载上次保存的路径: {last_path}")
+                        self.status_bar.SetStatusText(f"已加载路径: {last_path}")
                         return
                     else:
                         self.status_bar.SetStatusText("配置文件中没有有效的路径，使用当前目录")
@@ -357,6 +385,150 @@ class ShaderBrowser(wx.Frame):
                 self.load_shader_files(current_dir)
             except:
                 pass
+    
+    def on_frag_click(self, event):
+        """处理frag列表单击事件：计算并显示Longest Path Cycles总和"""
+        selection = self.frag_list.GetSelection()
+        if selection == wx.NOT_FOUND:
+            # 清空显示
+            self.frag_sum_label.SetLabel("")
+            return
+        
+        frag_file_name = self.frag_list.GetString(selection)
+        current_path = self.path_text.GetValue()
+        if not current_path:
+            self.frag_sum_label.SetLabel("请先选择路径")
+            self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            return
+        
+        # 构建frag文件的完整路径
+        frags_dir = os.path.join(current_path, "Frags")
+        frag_file_path = os.path.join(frags_dir, frag_file_name)
+        
+        if not os.path.exists(frag_file_path):
+            self.frag_sum_label.SetLabel("文件不存在")
+            self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            return
+        
+        # 查找malisc.exe
+        malisc_path = self.find_malisc_exe()
+        if not malisc_path:
+            self.frag_sum_label.SetLabel("未找到malisc.exe")
+            self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            return
+        
+        # 在新线程中执行编译并计算总和
+        import threading
+        thread = threading.Thread(
+            target=self.calculate_frag_cycles_sum_in_thread,
+            args=(frag_file_name, frag_file_path, malisc_path)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        # 显示加载中状态
+        self.frag_sum_label.SetLabel(f"{frag_file_name}")
+        self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+    
+    def calculate_frag_cycles_sum_in_thread(self, frag_file_name, frag_file_path, malisc_path):
+        """在新线程中编译frag文件并计算Longest Path Cycles总和"""
+        try:
+            # 使用powershell执行malisc.exe
+            cmd = f'powershell -Command "& \'{malisc_path}\' \'{frag_file_path}\'"'
+            
+            # 执行命令
+            import subprocess
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8')
+            
+            # 获取输出
+            output = result.stdout
+            if result.returncode != 0:
+                output += f"\n\n错误代码: {result.returncode}"
+                if result.stderr:
+                    output += f"\n错误信息: {result.stderr}"
+            
+            # 计算Longest Path Cycles总和
+            cycles_sum = self.calculate_longest_path_cycles_sum(output)
+            
+            # 在主线程中更新显示
+            wx.CallAfter(self.update_frag_sum_display, frag_file_name, cycles_sum)
+            
+        except Exception as e:
+            error_msg = f"计算失败: {str(e)}"
+            wx.CallAfter(self.update_frag_sum_display, frag_file_name, None, error_msg)
+    
+    def update_frag_sum_display(self, frag_file_name, cycles_sum, error_msg=None):
+        """更新frag总和显示"""
+        if error_msg:
+            # 显示错误信息
+            self.frag_sum_label.SetLabel(f"错误: {error_msg[:30]}...")
+            self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            return
+        
+        # 创建显示文本
+        if cycles_sum is not None:
+            display_text = f"复杂度:{cycles_sum}"
+            
+            # 根据总和设置颜色（与CompileResultDialog一致）
+            if cycles_sum <= 40:
+                # 40以下：绿色 - 良好性能
+                self.frag_sum_label.SetForegroundColour(wx.Colour(0, 180, 0))  # 绿色
+            elif cycles_sum <= 79:
+                # 41~79：橙色 - 中等性能
+                self.frag_sum_label.SetForegroundColour(wx.Colour(255, 140, 0))  # 橙色
+            else:
+                # 80以上：红色 - 需要优化
+                self.frag_sum_label.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
+        else:
+            display_text = "--"
+            self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+        
+        self.frag_sum_label.SetLabel(display_text)
+    
+    def calculate_longest_path_cycles_sum(self, output):
+        """计算Longest Path Cycles三个值的和（与CompileResultDialog中的方法相同）"""
+        try:
+            # 查找"Longest Path Cycles:"在文本中的位置
+            lines = output.split('\n')
+            for line in lines:
+                if "Longest Path Cycles:" in line:
+                    # 提取冒号后面的部分
+                    parts = line.split("Longest Path Cycles:")
+                    if len(parts) > 1:
+                        values_str = parts[1].strip()
+                        
+                        # 提取所有数字（可能用逗号、空格分隔）
+                        import re
+                        numbers = re.findall(r'\d+', values_str)
+                        
+                        if len(numbers) >= 3:
+                            # 取前三个数字
+                            try:
+                                num1 = int(numbers[0])
+                                num2 = int(numbers[1])
+                                num3 = int(numbers[2])
+                                return num1 + num2 + num3
+                            except ValueError:
+                                return None
+            return None
+        except Exception as e:
+            print(f"计算Longest Path Cycles总和时出错: {e}")
+            return None
+    
+    def on_frag_char_hook(self, event):
+        """处理frag列表键盘事件：回车键触发双击事件（使用CHAR_HOOK）"""
+        keycode = event.GetKeyCode()
+        
+        # 检查是否是回车键（Enter键）
+        if keycode == wx.WXK_RETURN or keycode == wx.WXK_NUMPAD_ENTER:
+            # 阻止事件继续传播
+            event.Skip(False)
+            # 触发双击事件
+            self.on_frag_double_click(event)
+            return
+        
+        # 其他按键继续正常处理
+        event.Skip()
     
     def on_frag_double_click(self, event):
         """处理frag列表双击事件：使用malisc.exe编译选中的frag文件"""
@@ -463,7 +635,7 @@ class ShaderBrowser(wx.Frame):
         if not os.path.isdir(current_path):
             wx.MessageBox(f"路径不是有效的目录: {current_path}", "错误", wx.OK | wx.ICON_ERROR)
             return
-        
+        self.frag_sum_label.SetLabel("--")
         try:
             self.status_bar.SetStatusText("正在刷新文件列表...")
             self.load_shader_files(current_path)
@@ -687,7 +859,7 @@ class ShaderBrowser(wx.Frame):
 
 def main():
     app = wx.App(False)
-    frame = ShaderBrowser(None, "Shader frag 分离器")  #创建应用程序的主窗口实例
+    frame = ShaderBrowser(None, "Shader frag 分离器(YD)")  #创建应用程序的主窗口实例
     app.MainLoop()
 
 
