@@ -257,6 +257,13 @@ class ShaderBrowser(wx.Frame):
         self.path_combo.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
         hbox1.Add(self.path_combo, proportion=1, flag=wx.EXPAND)
         
+        # 添加清空历史按钮到路径输入框右边
+        self.clear_history_btn = wx.Button(panel, label="清空历史")
+        self.clear_history_btn.Bind(wx.EVT_BUTTON, self.on_clear_history)
+        # 设置浅红色背景
+        self.clear_history_btn.SetBackgroundColour(wx.Colour(255, 182, 193))  # 浅红色
+        hbox1.Add(self.clear_history_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+
         vbox.Add(hbox1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
 
         # 第二行：操作按钮
@@ -377,6 +384,11 @@ class ShaderBrowser(wx.Frame):
     def save_path_to_config(self, path):
         """保存路径到配置文件（添加到历史记录）并更新ComboBox"""
         try:
+            # 检查路径是否有效（是否是有效的目录）
+            if not path or not os.path.isdir(path):
+                self.status_bar.SetStatusText(f"无效路径，不保存到历史记录: {path}")
+                return
+            
             # 读取现有配置
             config = {}
             if os.path.exists(self.CONFIG_FILE):
@@ -769,6 +781,40 @@ class ShaderBrowser(wx.Frame):
         except Exception as e:
             self.status_bar.SetStatusText(f"刷新失败: {str(e)}")
             wx.MessageBox(f"刷新失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+    
+    def on_clear_history(self, event):
+        """处理清空历史按钮点击事件"""
+        # 确认对话框
+        dlg = wx.MessageDialog(self, 
+                              "确定要清空所有历史记录吗？\n此操作不可撤销。",
+                              "确认清空历史",
+                              wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+        
+        if dlg.ShowModal() == wx.ID_YES:
+            try:
+                # 读取现有配置
+                config = {}
+                if os.path.exists(self.CONFIG_FILE):
+                    with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                
+                # 清空历史记录
+                config["path_history"] = []
+                # 保留last_path，以便用户仍然可以使用当前路径
+                
+                with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+                
+                # 更新ComboBox的下拉列表
+                self.path_combo.SetItems([])
+                
+                self.status_bar.SetStatusText("历史记录已清空")
+                # wx.MessageBox("历史记录已成功清空", "完成", wx.OK | wx.ICON_INFORMATION)
+            except Exception as e:
+                self.status_bar.SetStatusText(f"清空历史记录失败: {str(e)}")
+                wx.MessageBox(f"清空历史记录失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+        
+        dlg.Destroy()
     
     def on_separate_frag(self, event):
         """处理分离frag按钮点击事件"""
