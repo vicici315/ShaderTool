@@ -1,6 +1,7 @@
 import wx
 import os
 import json
+import sys
 
 
 class CompileResultDialog(wx.Dialog):
@@ -281,7 +282,15 @@ class ShaderBrowser(wx.Frame):
         self.refresh_btn.SetBackgroundColour(wx.Colour(144, 238, 144))  # 浅绿色
         hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
         
-        vbox.Add(hbox2, flag=wx.ALIGN_LEFT | wx.TOP, border=10)
+        # 添加可伸缩的空间，使后面的按钮靠右对齐
+        hbox2.AddStretchSpacer()
+        
+        self.openFrag_btn = wx.Button(panel, label="打开frag变体")
+        self.openFrag_btn.Bind(wx.EVT_BUTTON, self.on_open_frag)
+        self.openFrag_btn.SetBackgroundColour(wx.Colour(164, 188, 250))  # 浅绿色
+        hbox2.Add(self.openFrag_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
+        
+        vbox.Add(hbox2, flag=wx.EXPAND | wx.TOP, border=10)
         
         # 第三行：双列表标签行
         hbox_labels = wx.BoxSizer(wx.HORIZONTAL)
@@ -848,6 +857,45 @@ class ShaderBrowser(wx.Frame):
         except Exception as e:
             self.status_bar.SetStatusText(f"分离frag失败: {str(e)}")
             wx.MessageBox(f"分离frag失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+    
+    def on_open_frag(self, event):
+        """处理打开变体按钮点击事件：使用系统默认程序打开选中的frag文件"""
+        # 获取选中的frag文件
+        selection = self.frag_list.GetSelection()
+        if selection == wx.NOT_FOUND:
+            wx.MessageBox("请先在右侧列表中选择一个.frag文件", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        frag_file_name = self.frag_list.GetString(selection)
+        current_path = self.path_combo.GetValue()
+        if not current_path:
+            wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        # 构建frag文件的完整路径
+        frags_dir = os.path.join(current_path, "Frags")
+        frag_file_path = os.path.join(frags_dir, frag_file_name)
+        
+        if not os.path.exists(frag_file_path):
+            wx.MessageBox(f"文件不存在: {frag_file_path}", "错误", wx.OK | wx.ICON_ERROR)
+            return
+        
+        try:
+            # 使用系统默认程序打开文件
+            if os.name == 'nt':  # Windows系统
+                os.startfile(frag_file_path)
+            elif os.name == 'posix':  # macOS或Linux系统
+                import subprocess
+                subprocess.run(['open', frag_file_path] if sys.platform == 'darwin' else ['xdg-open', frag_file_path])
+            else:
+                wx.MessageBox(f"不支持的操作系统: {os.name}", "错误", wx.OK | wx.ICON_ERROR)
+                return
+            
+            self.status_bar.SetStatusText(f"已打开文件: {frag_file_name}")
+            
+        except Exception as e:
+            self.status_bar.SetStatusText(f"打开文件失败: {str(e)}")
+            wx.MessageBox(f"打开文件失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
     
     def separate_frag_from_shader(self, shader_path, base_directory):
         """从shader文件中分离frag内容"""
