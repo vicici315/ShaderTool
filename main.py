@@ -124,16 +124,17 @@ class CompileResultDialog(wx.Dialog):
                     if len(parts) > 1:
                         values_str = parts[1].strip()
                         
-                        # 提取所有数字（可能用逗号、空格分隔）
+                        # 提取所有数字（可能用逗号、空格分隔，包括小数）
                         import re
-                        numbers = re.findall(r'\d+', values_str)
+                        # 匹配整数和小数，例如：1.7, 2, 0.5, 3.14
+                        numbers = re.findall(r'\d+\.?\d*', values_str)
                         
                         if len(numbers) >= 3:
                             # 取前三个数字
                             try:
-                                num1 = int(numbers[0])
-                                num2 = int(numbers[1])
-                                num3 = int(numbers[2])
+                                num1 = float(numbers[0])
+                                num2 = float(numbers[1])
+                                num3 = float(numbers[2])
                                 return num1 + num2 + num3
                             except ValueError:
                                 return None
@@ -245,11 +246,12 @@ class ShaderBrowser(wx.Frame):
         # 设置橙黄色背景
         self.browse_btn.SetBackgroundColour(wx.Colour(255, 225, 110))  # 橙黄色
         hbox1.Add(self.browse_btn, flag=wx.EXPAND)
-        self.path_text = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
-        self.path_text.Bind(wx.EVT_TEXT_ENTER, self.on_path_enter)
+        self.path_combo = wx.ComboBox(panel, style=wx.CB_DROPDOWN | wx.TE_PROCESS_ENTER)
+        self.path_combo.Bind(wx.EVT_TEXT_ENTER, self.on_path_enter)
+        self.path_combo.Bind(wx.EVT_COMBOBOX, self.on_path_combo_select)
         # 设置浅黄色背景
-        self.path_text.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
-        hbox1.Add(self.path_text, proportion=1, flag=wx.EXPAND)
+        self.path_combo.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
+        hbox1.Add(self.path_combo, proportion=1, flag=wx.EXPAND)
         
         vbox.Add(hbox1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
 
@@ -320,16 +322,34 @@ class ShaderBrowser(wx.Frame):
         selection = self.file_list.GetSelection()
         if selection != wx.NOT_FOUND:
             file_name = self.file_list.GetString(selection)
-            current_path = self.path_text.GetValue()
+            current_path = self.path_combo.GetValue()
             if current_path:
                 full_path = os.path.join(current_path, file_name)
                 wx.MessageBox(f"完整路径:\n{full_path}", "文件信息", wx.OK | wx.ICON_INFORMATION)
     
     def on_path_enter(self, event):
-        """处理路径文本框回车事件"""
-        path = self.path_text.GetValue()
+        """处理路径组合框回车事件"""
+        path = self.path_combo.GetValue()
         if path:
             self.load_shader_files(path)
+    
+    def on_path_combo_select(self, event):
+        """处理路径组合框选择事件"""
+        # 获取选择的索引
+        selection = event.GetSelection()
+        if selection != wx.NOT_FOUND:
+            # 从ComboBox获取选择的字符串
+            path = self.path_combo.GetString(selection)
+            if path:
+                # 使用CallAfter确保在事件处理完成后更新UI
+                wx.CallAfter(self._handle_path_selection, path)
+    
+    def _handle_path_selection(self, path):
+        """处理路径选择（在事件处理完成后调用）"""
+        # 更新ComboBox的值
+        self.path_combo.SetValue(path)
+        # 然后加载文件
+        self.load_shader_files(path)
     
     def on_browse(self, event):
         """处理浏览按钮点击事件"""
@@ -338,33 +358,75 @@ class ShaderBrowser(wx.Frame):
         
         if dlg.ShowModal() == wx.ID_OK:
             selected_path = dlg.GetPath()
-            self.path_text.SetValue(selected_path)
+            self.path_combo.SetValue(selected_path)
             self.load_shader_files(selected_path)
         
         dlg.Destroy()
     
     def save_path_to_config(self, path):
-        """保存路径到配置文件"""
+        """保存路径到配置文件（添加到历史记录）并更新ComboBox"""
         try:
-            config = {"last_path": path}
+            # 读取现有配置
+            config = {}
+            if os.path.exists(self.CONFIG_FILE):
+                with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            
+            # 获取或初始化历史记录
+            path_history = config.get("path_history", [])
+            
+            # 如果路径不在历史记录中，添加到开头
+            if path not in path_history:
+                path_history.insert(0, path)
+                # 限制历史记录数量（例如最多20个）
+                if len(path_history) > 20:
+                    path_history = path_history[:20]
+            
+            # 更新配置
+            config["path_history"] = path_history
+            config["last_path"] = path  # 保持向后兼容
+            
             with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
-            self.status_bar.SetStatusText(f"路径已保存: {self.CONFIG_FILE}")
+            
+            # 使用Freeze/Thaw防止UI闪烁
+            self.path_combo.Freeze()
+            
+            # 保存当前ComboBox的值和选择
+            current_value = self.path_combo.GetValue()
+            current_selection = self.path_combo.GetSelection()
+            
+            # 更新ComboBox的下拉列表
+            self.path_combo.SetItems(path_history)
+            
+            # 恢复值
+            self.path_combo.SetValue(path)
+            
+            self.path_combo.Thaw()
+            
+            self.status_bar.SetStatusText(f"路径已保存到历史记录: {self.CONFIG_FILE}")
         except Exception as e:
             self.status_bar.SetStatusText(f"保存配置文件失败: {str(e)}")
     
     def load_saved_path(self):
-        """从配置文件加载保存的路径，如果没有则使用当前目录"""
+        """从配置文件加载保存的路径和历史记录，如果没有则使用当前目录"""
         try:
             current_dir = os.getcwd()  # 获取当前工作目录
             
             if os.path.exists(self.CONFIG_FILE):
                 with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
                     config = json.load(f)
+                    
+                    # 加载历史记录
+                    path_history = config.get("path_history", [])
+                    if path_history:
+                        self.path_combo.SetItems(path_history)
+                    
+                    # 加载最后使用的路径
                     last_path = config.get("last_path", "")
                     if last_path and os.path.isdir(last_path):
                         # 使用保存的路径
-                        self.path_text.SetValue(last_path)
+                        self.path_combo.SetValue(last_path)
                         self.load_shader_files(last_path)
                         self.status_bar.SetStatusText(f"已加载路径: {last_path}")
                         return
@@ -374,7 +436,7 @@ class ShaderBrowser(wx.Frame):
                 self.status_bar.SetStatusText("配置文件不存在，使用当前目录")
             
             # 使用当前目录
-            self.path_text.SetValue(current_dir)
+            self.path_combo.SetValue(current_dir)
             self.load_shader_files(current_dir)
             self.status_bar.SetStatusText(f"已加载当前目录: {current_dir}")
             
@@ -383,7 +445,7 @@ class ShaderBrowser(wx.Frame):
             # 失败时也尝试加载当前目录
             try:
                 current_dir = os.getcwd()
-                self.path_text.SetValue(current_dir)
+                self.path_combo.SetValue(current_dir)
                 self.load_shader_files(current_dir)
             except:
                 pass
@@ -397,7 +459,7 @@ class ShaderBrowser(wx.Frame):
             return
         
         frag_file_name = self.frag_list.GetString(selection)
-        current_path = self.path_text.GetValue()
+        current_path = self.path_combo.GetValue()
         if not current_path:
             self.frag_sum_label.SetLabel("请先选择路径")
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
@@ -499,16 +561,17 @@ class ShaderBrowser(wx.Frame):
                     if len(parts) > 1:
                         values_str = parts[1].strip()
                         
-                        # 提取所有数字（可能用逗号、空格分隔）
+                        # 提取所有数字（可能用逗号、空格分隔，包括小数）
                         import re
-                        numbers = re.findall(r'\d+', values_str)
+                        # 匹配整数和小数，例如：1.7, 2, 0.5, 3.14
+                        numbers = re.findall(r'\d+\.?\d*', values_str)
                         
                         if len(numbers) >= 3:
                             # 取前三个数字
                             try:
-                                num1 = int(numbers[0])
-                                num2 = int(numbers[1])
-                                num3 = int(numbers[2])
+                                num1 = float(numbers[0])
+                                num2 = float(numbers[1])
+                                num3 = float(numbers[2])
                                 return num1 + num2 + num3
                             except ValueError:
                                 return None
@@ -540,7 +603,7 @@ class ShaderBrowser(wx.Frame):
             return
         
         frag_file_name = self.frag_list.GetString(selection)
-        current_path = self.path_text.GetValue()
+        current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
             return
@@ -629,7 +692,7 @@ class ShaderBrowser(wx.Frame):
     
     def on_refresh(self, event):
         """处理刷新按钮点击事件：重新加载当前目录的文件"""
-        current_path = self.path_text.GetValue()
+        current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
             return
@@ -655,7 +718,7 @@ class ShaderBrowser(wx.Frame):
             return
         
         file_name = self.file_list.GetString(selection)
-        current_path = self.path_text.GetValue()
+        current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
             return
