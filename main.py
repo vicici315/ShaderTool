@@ -58,9 +58,13 @@ class CompileResultDialog(wx.Dialog):
         # 创建结果显示文本
         result_text = ""
         if cycles_sum is not None:
-            result_text = f"Longest Path Cycles 总和: {cycles_sum}"
+            # 检查是否为整数：如果cycles_sum与它的整数部分相等，则为整数
+            if cycles_sum.is_integer():
+                result_text = f"LongestPathCycles总和: {int(cycles_sum)}"
+            else:
+                result_text = f"LongestPathCycles总和: {cycles_sum}"
         else:
-            result_text = "Longest Path Cycles: --"
+            result_text = "LongestPathCycles: --"
         
         result_label = wx.StaticText(self, label=result_text)
         
@@ -283,10 +287,17 @@ class ShaderBrowser(wx.Frame):
         frag_label = wx.StaticText(panel, label="frag 列表:")
         frag_label_sizer.Add(frag_label, flag=wx.ALIGN_CENTER_VERTICAL)
         
-        # 添加总和显示文本（初始为空）
+        # 添加复杂度显示文本（初始为空）
         self.frag_sum_label = wx.StaticText(panel, label="")
         self.frag_sum_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.frag_sum_label.SetMinSize((100, -1))  # 设置最小宽度
         frag_label_sizer.Add(self.frag_sum_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
+        
+        # 添加指令数显示文本（初始为空）
+        self.instructions_label = wx.StaticText(panel, label="")
+        self.instructions_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.instructions_label.SetMinSize((100, -1))  # 设置最小宽度
+        frag_label_sizer.Add(self.instructions_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
         
         hbox_labels.Add(frag_label_sizer, proportion=1, flag=wx.EXPAND)
         
@@ -456,6 +467,7 @@ class ShaderBrowser(wx.Frame):
         if selection == wx.NOT_FOUND:
             # 清空显示
             self.frag_sum_label.SetLabel("")
+            self.instructions_label.SetLabel("")
             return
         
         frag_file_name = self.frag_list.GetString(selection)
@@ -463,6 +475,7 @@ class ShaderBrowser(wx.Frame):
         if not current_path:
             self.frag_sum_label.SetLabel("请先选择路径")
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            self.instructions_label.SetLabel("")
             return
         
         # 构建frag文件的完整路径
@@ -472,6 +485,7 @@ class ShaderBrowser(wx.Frame):
         if not os.path.exists(frag_file_path):
             self.frag_sum_label.SetLabel("文件不存在")
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            self.instructions_label.SetLabel("")
             return
         
         # 查找malisc.exe
@@ -479,6 +493,7 @@ class ShaderBrowser(wx.Frame):
         if not malisc_path:
             self.frag_sum_label.SetLabel("未找到malisc.exe")
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            self.instructions_label.SetLabel("")
             return
         
         # 在新线程中执行编译并计算总和
@@ -495,7 +510,7 @@ class ShaderBrowser(wx.Frame):
         self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
     
     def calculate_frag_cycles_sum_in_thread(self, frag_file_name, frag_file_path, malisc_path):
-        """在新线程中编译frag文件并计算Longest Path Cycles总和"""
+        """在新线程中编译frag文件并计算Longest Path Cycles总和和指令数"""
         try:
             # 使用powershell执行malisc.exe
             cmd = f'powershell -Command "& \'{malisc_path}\' \'{frag_file_path}\'"'
@@ -514,24 +529,32 @@ class ShaderBrowser(wx.Frame):
             # 计算Longest Path Cycles总和
             cycles_sum = self.calculate_longest_path_cycles_sum(output)
             
+            # 提取Instructions Emitted值
+            instructions = self.extract_instructions_emitted(output)
+            
             # 在主线程中更新显示
-            wx.CallAfter(self.update_frag_sum_display, frag_file_name, cycles_sum)
+            wx.CallAfter(self.update_frag_sum_display, frag_file_name, cycles_sum, instructions)
             
         except Exception as e:
             error_msg = f"计算失败: {str(e)}"
-            wx.CallAfter(self.update_frag_sum_display, frag_file_name, None, error_msg)
+            wx.CallAfter(self.update_frag_sum_display, frag_file_name, None, None, error_msg)
     
-    def update_frag_sum_display(self, frag_file_name, cycles_sum, error_msg=None):
-        """更新frag总和显示"""
+    def update_frag_sum_display(self, frag_file_name, cycles_sum, instructions=None, error_msg=None):
+        """更新frag总和显示和指令数显示"""
         if error_msg:
             # 显示错误信息
             self.frag_sum_label.SetLabel(f"错误: {error_msg[:30]}...")
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            self.instructions_label.SetLabel("")
             return
         
-        # 创建显示文本
+        # 更新复杂度显示
         if cycles_sum is not None:
-            display_text = f"复杂度:{cycles_sum}"
+            # 检查是否为整数：如果cycles_sum与它的整数部分相等，则为整数
+            if cycles_sum.is_integer():
+                display_text = f"复杂度:{int(cycles_sum)}"
+            else:
+                display_text = f"复杂度:{cycles_sum}"
             
             # 根据总和设置颜色（与CompileResultDialog一致）
             if cycles_sum <= 40:
@@ -548,6 +571,15 @@ class ShaderBrowser(wx.Frame):
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
         
         self.frag_sum_label.SetLabel(display_text)
+        
+        # 更新指令数显示
+        if instructions is not None:
+            instructions_text = f"指令数:{instructions}"
+            self.instructions_label.SetLabel(instructions_text)
+            # 指令数显示为蓝色
+            self.instructions_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+        else:
+            self.instructions_label.SetLabel("")
     
     def calculate_longest_path_cycles_sum(self, output):
         """计算Longest Path Cycles三个值的和（与CompileResultDialog中的方法相同）"""
@@ -578,6 +610,34 @@ class ShaderBrowser(wx.Frame):
             return None
         except Exception as e:
             print(f"计算Longest Path Cycles总和时出错: {e}")
+            return None
+    
+    def extract_instructions_emitted(self, output):
+        """提取Instructions Emitted字段的值"""
+        try:
+            # 查找"Instructions Emitted:"在文本中的位置
+            lines = output.split('\n')
+            for line in lines:
+                if "Instructions Emitted:" in line:
+                    # 提取冒号后面的部分
+                    parts = line.split("Instructions Emitted:")
+                    if len(parts) > 1:
+                        values_str = parts[1].strip()
+                        
+                        # 提取第一个数字（可能用逗号、空格分隔）
+                        import re
+                        # 匹配整数，例如：12, 45, 100
+                        numbers = re.findall(r'\d+', values_str)
+                        
+                        if numbers:
+                            # 取第一个数字
+                            try:
+                                return int(numbers[0])
+                            except ValueError:
+                                return None
+            return None
+        except Exception as e:
+            print(f"提取Instructions Emitted时出错: {e}")
             return None
     
     def on_frag_char_hook(self, event):
@@ -701,6 +761,7 @@ class ShaderBrowser(wx.Frame):
             wx.MessageBox(f"路径不是有效的目录: {current_path}", "错误", wx.OK | wx.ICON_ERROR)
             return
         self.frag_sum_label.SetLabel("--")
+        self.instructions_label.SetLabel("--")
         try:
             self.status_bar.SetStatusText("正在刷新文件列表...")
             self.load_shader_files(current_path)
