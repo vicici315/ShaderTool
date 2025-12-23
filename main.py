@@ -287,7 +287,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "1.4"
+    VERSION = "1.5"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -297,6 +297,10 @@ class ShaderBrowser(wx.Frame):
 
         # 设置窗口图标
         self.SetIcon(self.load_icon())
+        
+        # 初始化最高值跟踪变量
+        self.max_cycles_sum = 0
+        self.max_instructions = 0
         
         self.InitUI()
         self.Centre()
@@ -415,32 +419,74 @@ class ShaderBrowser(wx.Frame):
         
         vbox.Add(hbox2, flag=wx.EXPAND | wx.TOP, border=10)
         
-        # 第三行：双列表标签行
-        hbox_labels = wx.BoxSizer(wx.HORIZONTAL)
+        # 第三行：shader文件列表标签行
+        hbox_file_label = wx.BoxSizer(wx.HORIZONTAL)
         
-        file_label = wx.StaticText(panel, label="shader 文件列表:")
-        hbox_labels.Add(file_label, proportion=1, flag=wx.EXPAND)
+        # 左侧：shader文件列表标签
+        # file_label = wx.StaticText(panel, label="shader 文件列表:")
+        # hbox_file_label.Add(file_label, flag=wx.ALIGN_CENTER_VERTICAL)
         
-        # frag标签和总和显示区域
-        frag_label_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        frag_label = wx.StaticText(panel, label="frag 列表:")
-        frag_label_sizer.Add(frag_label, flag=wx.ALIGN_CENTER_VERTICAL)
+        # 添加可伸缩空间，使右侧内容靠右对齐
+        # hbox_file_label.AddStretchSpacer()
+
+        hbox_file_label.AddStretchSpacer()
+        # 右侧：frag文件名显示
+        self.frag_name_label = wx.StaticText(panel, label="", style=wx.ALIGN_RIGHT)
+        self.frag_name_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        # self.frag_name_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+        self.frag_name_label.SetMinSize((400, -1))  # 设置最小宽度
+
+        hbox_file_label.Add(self.frag_name_label, flag=wx.ALIGN_CENTER_VERTICAL)
+        # 第一列：最高复杂度显示
+        max_frag_sum_label = wx.StaticText(panel, label="最高复杂度:")
+        max_frag_sum_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        hbox_file_label.Add(max_frag_sum_label, flag=wx.ALIGN_CENTER_VERTICAL)
+
+        self.max_frag_sum_value = wx.StaticText(panel, label="--")
+        self.max_frag_sum_value.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.max_frag_sum_value.SetMinSize((50, -1))  # 设置最小宽度
+        hbox_file_label.Add(self.max_frag_sum_value, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=5)
+
+        # 第二列：最高指令数显示
+        max_instructions_label = wx.StaticText(panel, label="最高指令数:")
+        max_instructions_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        hbox_file_label.Add(max_instructions_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
+
+        self.max_instructions_value = wx.StaticText(panel, label="--")
+        self.max_instructions_value.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.max_instructions_value.SetMinSize((50, -1))  # 设置最小宽度
+        hbox_file_label.Add(self.max_instructions_value, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=5)
+        vbox.Add(hbox_file_label, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
         
-        # 添加复杂度显示文本（初始为空）
+        # 第四行：frag列表标签和frag信息显示区域
+        hbox_frag_labels = wx.BoxSizer(wx.HORIZONTAL)
+        
+        # 左侧：frag列表标签
+        # frag_label = wx.StaticText(panel, label="frag 列表:")
+        # hbox_frag_labels.Add(frag_label, flag=wx.ALIGN_CENTER_VERTICAL)
+        
+        # 添加可伸缩空间，使右侧内容靠右对齐
+        hbox_frag_labels.AddStretchSpacer()
+        
+        # 右侧：frag信息显示区域（包含最高复杂度和指令数，以及当前frag的复杂度和指令数）
+        frag_info_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        
+        # 第三列：当前frag的复杂度显示
         self.frag_sum_label = wx.StaticText(panel, label="")
         self.frag_sum_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        self.frag_sum_label.SetMinSize((100, -1))  # 设置最小宽度
-        frag_label_sizer.Add(self.frag_sum_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
-        
-        # 添加指令数显示文本（初始为空）
+        self.frag_sum_label.SetMinSize((128, -1))  # 设置最小宽度
+        frag_info_sizer.Add(self.frag_sum_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
+
+        # 第四列：当前frag的指令数显示
         self.instructions_label = wx.StaticText(panel, label="")
         self.instructions_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
         self.instructions_label.SetMinSize((100, -1))  # 设置最小宽度
-        frag_label_sizer.Add(self.instructions_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
+        frag_info_sizer.Add(self.instructions_label, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT, border=10)
         
-        hbox_labels.Add(frag_label_sizer, proportion=1, flag=wx.EXPAND)
+        hbox_frag_labels.Add(frag_info_sizer, flag=wx.ALIGN_CENTER_VERTICAL)
         
-        vbox.Add(hbox_labels, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
+        vbox.Add(hbox_frag_labels, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
         
         # 第四行：双列表框
         hbox_lists = wx.BoxSizer(wx.HORIZONTAL)
@@ -650,8 +696,9 @@ class ShaderBrowser(wx.Frame):
         thread.start()
         
         # 显示加载中状态
-        self.frag_sum_label.SetLabel(f"{frag_file_name}")
+        self.frag_sum_label.SetLabel("计算中...")
         self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+        self.instructions_label.SetLabel("")
     
     def calculate_frag_cycles_sum_in_thread(self, frag_file_name, frag_file_path, malisc_path):
         """在新线程中编译frag文件并计算Longest Path Cycles总和和指令数"""
@@ -710,6 +757,17 @@ class ShaderBrowser(wx.Frame):
             else:
                 # 80以上：红色 - 需要优化
                 self.frag_sum_label.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
+            
+            # 更新最高复杂度
+            if cycles_sum > self.max_cycles_sum:
+                self.max_cycles_sum = cycles_sum
+                # 更新最高复杂度显示
+                if cycles_sum.is_integer():
+                    self.max_frag_sum_value.SetLabel(str(int(cycles_sum)))
+                else:
+                    self.max_frag_sum_value.SetLabel(str(cycles_sum))
+                # 更新frag文件名显示（只在最高值出现时更新）
+                self.frag_name_label.SetLabel(f"{frag_file_name}：")
         else:
             display_text = "--"
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
@@ -722,6 +780,14 @@ class ShaderBrowser(wx.Frame):
             self.instructions_label.SetLabel(instructions_text)
             # 指令数显示为蓝色
             self.instructions_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+            
+            # 更新最高指令数
+            if instructions > self.max_instructions:
+                self.max_instructions = instructions
+                # 更新最高指令数显示
+                self.max_instructions_value.SetLabel(str(instructions))
+                # 更新frag文件名显示（只在最高值出现时更新）
+                self.frag_name_label.SetLabel(f"{frag_file_name}：")
         else:
             self.instructions_label.SetLabel("")
     
@@ -944,6 +1010,10 @@ class ShaderBrowser(wx.Frame):
             return
         self.frag_sum_label.SetLabel("--")
         self.instructions_label.SetLabel("--")
+        self.max_frag_sum_value.SetLabel("--")
+        self.max_instructions_value.SetLabel("--")
+        self.max_cycles_sum = 0
+        self.max_instructions = 0
         try:
             self.status_bar.SetStatusText("正在刷新文件列表...")
             self.load_shader_files(current_path)
@@ -1250,6 +1320,8 @@ class ShaderBrowser(wx.Frame):
 def main():
     app = wx.App(False)
     frame = ShaderBrowser(None, "Shader frag 分离器(YD)")  #创建应用程序的主窗口实例
+    # 显示启动消息
+    # wx.MessageBox("程序已启动！", "提示", wx.OK | wx.ICON_INFORMATION)
     app.MainLoop()
 
 
