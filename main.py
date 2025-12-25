@@ -521,7 +521,9 @@ class ShaderBrowser(wx.Frame):
             current_path = self.path_combo.GetValue()
             if current_path:
                 full_path = os.path.join(current_path, file_name)
-                wx.MessageBox(f"完整路径:\n{full_path}", "文件信息", wx.OK | wx.ICON_INFORMATION)
+                if os.name == 'nt':  # Windows系统
+                    os.startfile(full_path)
+                # wx.MessageBox(f"完整路径:\n{full_path}", "文件信息", wx.OK | wx.ICON_INFORMATION)
     
     def on_path_enter(self, event):
         """处理路径组合框回车事件"""
@@ -1115,12 +1117,12 @@ class ShaderBrowser(wx.Frame):
             # 使用系统默认程序打开文件
             if os.name == 'nt':  # Windows系统
                 os.startfile(frag_file_path)
-            elif os.name == 'posix':  # macOS或Linux系统
-                import subprocess
-                subprocess.run(['open', frag_file_path] if sys.platform == 'darwin' else ['xdg-open', frag_file_path])
-            else:
-                wx.MessageBox(f"不支持的操作系统: {os.name}", "错误", wx.OK | wx.ICON_ERROR)
-                return
+            # elif os.name == 'posix':  # macOS或Linux系统
+            #     import subprocess
+            #     subprocess.run(['open', frag_file_path] if sys.platform == 'darwin' else ['xdg-open', frag_file_path])
+            # else:
+            #     wx.MessageBox(f"不支持的操作系统: {os.name}", "错误", wx.OK | wx.ICON_ERROR)
+            #     return
             
             self.status_bar.SetStatusText(f"已打开文件: {frag_file_name}")
             
@@ -1149,8 +1151,8 @@ class ShaderBrowser(wx.Frame):
                     if re.search(r'#version\s+\d+\s+es', next_line):
                         fragment_indices.append(i)
         
-        if len(fragment_indices) < 2:
-            return []  # 至少需要两个 #ifdef FRAGMENT 才能分割
+        if len(fragment_indices) < 1:
+            return []  # 至少需要一个 #ifdef FRAGMENT 才能分割
         
         # 创建Frags目录
         frags_dir = os.path.join(base_directory, "Frags")
@@ -1161,26 +1163,27 @@ class ShaderBrowser(wx.Frame):
         
         frag_files = []
         
-        # 分割每个fragment块
-        for i in range(len(fragment_indices) - 1):
-            start_idx = fragment_indices[i]
-            end_idx = fragment_indices[i + 1]
-            
-            # 提取fragment内容（从start_idx到end_idx-1）
-            fragment_content = lines[start_idx:end_idx]
-            
-            # 处理文本：移除第一行的 #ifdef FRAGMENT 和最后的 #endif
-            processed_content = self.process_fragment_content(fragment_content)
-            
-            # 生成文件名
-            frag_filename = f"{shader_name}_{i+1:03d}.frag"
-            frag_filepath = os.path.join(frags_dir, frag_filename)
-            
-            # 写入文件
-            with open(frag_filepath, 'w', encoding='utf-8') as f:
-                f.writelines(processed_content)
-            
-            frag_files.append(frag_filename)
+        # 如果有多个fragment块，分割每个fragment块
+        if len(fragment_indices) >= 2:
+            for i in range(len(fragment_indices) - 1):
+                start_idx = fragment_indices[i]
+                end_idx = fragment_indices[i + 1]
+                
+                # 提取fragment内容（从start_idx到end_idx-1）
+                fragment_content = lines[start_idx:end_idx]
+                
+                # 处理文本：移除第一行的 #ifdef FRAGMENT 和最后的 #endif
+                processed_content = self.process_fragment_content(fragment_content)
+                
+                # 生成文件名
+                frag_filename = f"{shader_name}_{i+1:03d}.frag"
+                frag_filepath = os.path.join(frags_dir, frag_filename)
+                
+                # 写入文件
+                with open(frag_filepath, 'w', encoding='utf-8') as f:
+                    f.writelines(processed_content)
+                
+                frag_files.append(frag_filename)
         
         # 处理最后一个fragment块（到文件结尾）
         if fragment_indices:
@@ -1190,7 +1193,12 @@ class ShaderBrowser(wx.Frame):
             # 处理文本：移除第一行的 #ifdef FRAGMENT 和最后的 #endif
             processed_content = self.process_fragment_content(fragment_content)
             
-            frag_filename = f"{shader_name}_{len(fragment_indices):03d}.frag"
+            # 生成文件名：如果只有一个fragment，使用001作为编号
+            if len(fragment_indices) == 1:
+                frag_filename = f"{shader_name}_001.frag"
+            else:
+                frag_filename = f"{shader_name}_{len(fragment_indices):03d}.frag"
+                
             frag_filepath = os.path.join(frags_dir, frag_filename)
             
             with open(frag_filepath, 'w', encoding='utf-8') as f:
