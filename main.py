@@ -753,13 +753,16 @@ class ShaderBrowser(wx.Frame):
             if cycles_sum <= 40:
                 # 40以下：绿色 - 良好性能
                 self.frag_sum_label.SetForegroundColour(wx.Colour(0, 180, 0))  # 绿色
+                self.max_frag_sum_value.SetForegroundColour(wx.Colour(0, 180, 0))  # 绿色
             elif cycles_sum <= 79:
                 # 41~79：橙色 - 中等性能
                 self.frag_sum_label.SetForegroundColour(wx.Colour(255, 140, 0))  # 橙色
+                self.max_frag_sum_value.SetForegroundColour(wx.Colour(255, 140, 0))  # 橙色
             else:
                 # 80以上：红色 - 需要优化
                 self.frag_sum_label.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
-            
+                self.max_frag_sum_value.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
+
             # 更新最高复杂度
             if cycles_sum > self.max_cycles_sum:
                 self.max_cycles_sum = cycles_sum
@@ -769,7 +772,7 @@ class ShaderBrowser(wx.Frame):
                 else:
                     self.max_frag_sum_value.SetLabel(str(cycles_sum))
                 # 更新frag文件名显示（只在最高值出现时更新）
-                self.frag_name_label.SetLabel(f"{frag_file_name}：")
+                self.frag_name_label.SetLabel(f"{frag_file_name}:")
         else:
             display_text = "--"
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
@@ -789,7 +792,7 @@ class ShaderBrowser(wx.Frame):
                 # 更新最高指令数显示
                 self.max_instructions_value.SetLabel(str(instructions))
                 # 更新frag文件名显示（只在最高值出现时更新）
-                self.frag_name_label.SetLabel(f"{frag_file_name}：")
+                self.frag_name_label.SetLabel(f"{frag_file_name}:")
         else:
             self.instructions_label.SetLabel("")
     
