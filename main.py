@@ -287,7 +287,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "1.5"
+    VERSION = "1.6"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -408,7 +408,20 @@ class ShaderBrowser(wx.Frame):
         # 设置绿色背景
         self.refresh_btn.SetBackgroundColour(wx.Colour(144, 238, 144))  # 浅绿色
         hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+
+        self.refresh_btn = wx.Button(panel, label="X //", size=(50, -1))
+        self.refresh_btn.Bind(wx.EVT_BUTTON, self.del_comment)
+        # 设置绿色背景
+        self.refresh_btn.SetBackgroundColour(wx.Colour(124, 188, 144))  # 浅绿色
+        hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
         
+        # 添加"另存"复选框
+        self.save_checkbox = wx.CheckBox(panel, label="另存")
+        self.save_checkbox.SetValue(False)  # 默认不勾选
+        # 设置浅黄色背景
+        self.save_checkbox.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
+        hbox2.Add(self.save_checkbox, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+
         # 添加可伸缩的空间，使后面的按钮靠右对齐
         hbox2.AddStretchSpacer()
         
@@ -1003,13 +1016,180 @@ class ShaderBrowser(wx.Frame):
         
         return None
     
+    def del_comment(self, event):
+        """处理去注释按钮点击事件：对选中的shader文件进行去注释操作"""
+        # 获取选中的shader文件
+        selection = self.file_list.GetSelection()
+        if selection == wx.NOT_FOUND:
+            wx.MessageBox("请先在左侧列表中选择一个.shader文件", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        file_name = self.file_list.GetString(selection)
+        current_path = self.path_combo.GetValue()
+        if not current_path:
+            wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        # 构建shader文件的完整路径
+        shader_path = os.path.join(current_path, file_name)
+        
+        if not os.path.exists(shader_path):
+            wx.MessageBox(f"文件不存在: {shader_path}", "错误", wx.OK | wx.ICON_ERROR)
+            return
+        
+        # 显示提示窗口
+        dlg = wx.MessageDialog(
+            self,
+            f"将要处理的文件:\n{file_name}\n\n确认开始处理吗？",
+            "确认去注释操作",
+            wx.YES_NO | wx.ICON_QUESTION
+        )
+        
+        if dlg.ShowModal() != wx.ID_YES:
+            dlg.Destroy()
+            self.status_bar.SetStatusText("用户取消操作")
+            return
+        
+        dlg.Destroy()
+        
+        try:
+            # 读取文件内容
+            with open(shader_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 去除注释
+            processed_content = self.remove_comments(content)
+            
+            # 检查"另存"复选框状态
+            save_to_nocomment = self.save_checkbox.GetValue()
+            
+            if save_to_nocomment:
+                # 创建nocomment目录
+                nocomment_dir = os.path.join(current_path, "nocomment")
+                os.makedirs(nocomment_dir, exist_ok=True)
+                
+                # 构建输出文件路径
+                output_path = os.path.join(nocomment_dir, file_name)
+                
+                # 写入处理后的内容
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(processed_content)
+                
+                self.status_bar.SetStatusText(f"去注释完成，文件已另存到: {output_path}")
+                wx.MessageBox(f"去注释完成，文件已另存到:\n{output_path}", "完成", wx.OK | wx.ICON_INFORMATION)
+            else:
+                # 直接覆盖原文件
+                with open(shader_path, 'w', encoding='utf-8') as f:
+                    f.write(processed_content)
+                
+                self.status_bar.SetStatusText(f"去注释完成，文件已直接覆盖: {shader_path}")
+                wx.MessageBox(f"去注释完成，文件已直接覆盖:\n{shader_path}", "完成", wx.OK | wx.ICON_INFORMATION)
+            
+        except Exception as e:
+            self.status_bar.SetStatusText(f"去注释失败: {str(e)}")
+            wx.MessageBox(f"去注释失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+    
+    def remove_comments(self, content):
+        """
+        安全地移除shader文件中的注释
+        支持：
+        1. 单行注释：以 // 开头
+        2. 多行注释：以 /* 开头，以 */ 结尾
+        注意：避免删除字符串中的注释符号
+        """
+        if not content:
+            return content
+        
+        result = []
+        i = 0
+        n = len(content)
+        
+        # 状态标志
+        in_string = False          # 是否在字符串中
+        string_char = None         # 字符串引号字符 (' 或 ")
+        in_single_comment = False  # 是否在单行注释中
+        in_multi_comment = False   # 是否在多行注释中
+        escaped = False            # 是否在转义字符后
+        
+        while i < n:
+            char = content[i]
+            next_char = content[i+1] if i+1 < n else ''
+            
+            # 处理转义字符
+            if escaped:
+                escaped = False
+                result.append(char)
+                i += 1
+                continue
+            
+            # 处理字符串
+            if not in_single_comment and not in_multi_comment:
+                if char == '\\':
+                    escaped = True
+                    result.append(char)
+                    i += 1
+                    continue
+                
+                if char in ('"', "'"):
+                    if not in_string:
+                        in_string = True
+                        string_char = char
+                    elif string_char == char:
+                        in_string = False
+                        string_char = None
+                    result.append(char)
+                    i += 1
+                    continue
+            
+            # 如果在字符串中，直接添加字符
+            if in_string:
+                result.append(char)
+                i += 1
+                continue
+            
+            # 处理注释
+            if not in_single_comment and not in_multi_comment:
+                # 检查是否开始单行注释
+                if char == '/' and next_char == '/':
+                    in_single_comment = True
+                    i += 2
+                    continue
+                
+                # 检查是否开始多行注释
+                if char == '/' and next_char == '*':
+                    in_multi_comment = True
+                    i += 2
+                    continue
+            else:
+                # 在单行注释中，检查是否换行
+                if in_single_comment and char == '\n':
+                    in_single_comment = False
+                    result.append(char)  # 保留换行符
+                    i += 1
+                    continue
+                
+                # 在多行注释中，检查是否结束
+                if in_multi_comment and char == '*' and next_char == '/':
+                    in_multi_comment = False
+                    i += 2
+                    continue
+            
+            # 如果不在注释中，添加字符到结果
+            if not in_single_comment and not in_multi_comment:
+                result.append(char)
+            
+            i += 1
+        
+        # 将结果列表转换为字符串
+        return ''.join(result)
+
     def on_refresh(self, event):
         """处理刷新按钮点击事件：重新加载当前目录的文件"""
         current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
             return
-        
+
         if not os.path.isdir(current_path):
             wx.MessageBox(f"路径不是有效的目录: {current_path}", "错误", wx.OK | wx.ICON_ERROR)
             return
