@@ -504,8 +504,8 @@ class ShaderBrowser(wx.Frame):
         # 第四行：双列表框
         hbox_lists = wx.BoxSizer(wx.HORIZONTAL)
 
-        # 左侧：文件列表框
-        self.file_list = wx.ListBox(panel, style=wx.LB_SINGLE | wx.LB_HSCROLL)
+        # 左侧：文件列表框（改为多项选择）
+        self.file_list = wx.ListBox(panel, style=wx.LB_EXTENDED | wx.LB_HSCROLL)
         self.file_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_file_double_click)
         self.file_list.SetMinSize((0, -1))  # 👈 关键：允许水平方向被压缩
         hbox_lists.Add(self.file_list, proportion=1, flag=wx.EXPAND)
@@ -1018,29 +1018,28 @@ class ShaderBrowser(wx.Frame):
     
     def del_comment(self, event):
         """处理去注释按钮点击事件：对选中的shader文件进行去注释操作"""
-        # 获取选中的shader文件
-        selection = self.file_list.GetSelection()
-        if selection == wx.NOT_FOUND:
-            wx.MessageBox("请先在左侧列表中选择一个.shader文件", "提示", wx.OK | wx.ICON_WARNING)
+        # 获取选中的shader文件（多项选择）
+        selections = self.file_list.GetSelections()
+        if not selections:
+            wx.MessageBox("请先在左侧列表中选择一个或多个.shader文件", "提示", wx.OK | wx.ICON_WARNING)
             return
         
-        file_name = self.file_list.GetString(selection)
         current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
             return
         
-        # 构建shader文件的完整路径
-        shader_path = os.path.join(current_path, file_name)
+        # 获取选中的文件名列表
+        file_names = []
+        for selection in selections:
+            file_name = self.file_list.GetString(selection)
+            file_names.append(file_name)
         
-        if not os.path.exists(shader_path):
-            wx.MessageBox(f"文件不存在: {shader_path}", "错误", wx.OK | wx.ICON_ERROR)
-            return
-        
-        # 显示提示窗口
+        # 显示提示窗口，显示所有要处理的文件
+        file_list_text = "\n".join(file_names)
         dlg = wx.MessageDialog(
             self,
-            f"将要处理的文件:\n{file_name}\n\n确认开始处理吗？",
+            f"将要处理的文件 ({len(file_names)} 个):\n\n{file_list_text}\n\n确认开始处理吗？",
             "确认去注释操作",
             wx.YES_NO | wx.ICON_QUESTION
         )
@@ -1052,42 +1051,72 @@ class ShaderBrowser(wx.Frame):
         
         dlg.Destroy()
         
-        try:
-            # 读取文件内容
-            with open(shader_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # 去除注释
-            processed_content = self.remove_comments(content)
-            
-            # 检查"另存"复选框状态
-            save_to_nocomment = self.save_checkbox.GetValue()
-            
-            if save_to_nocomment:
-                # 创建nocomment目录
-                nocomment_dir = os.path.join(current_path, "nocomment")
-                os.makedirs(nocomment_dir, exist_ok=True)
+        # 检查"另存"复选框状态
+        save_to_nocomment = self.save_checkbox.GetValue()
+        
+        # 创建nocomment目录（如果需要）
+        if save_to_nocomment:
+            nocomment_dir = os.path.join(current_path, "nocomment")
+            os.makedirs(nocomment_dir, exist_ok=True)
+        
+        success_count = 0
+        error_count = 0
+        error_messages = []
+        
+        # 处理每个选中的文件
+        for file_name in file_names:
+            try:
+                # 构建shader文件的完整路径
+                shader_path = os.path.join(current_path, file_name)
                 
-                # 构建输出文件路径
-                output_path = os.path.join(nocomment_dir, file_name)
+                if not os.path.exists(shader_path):
+                    error_messages.append(f"文件不存在: {shader_path}")
+                    error_count += 1
+                    continue
                 
-                # 写入处理后的内容
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(processed_content)
+                # 读取文件内容
+                with open(shader_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
                 
-                self.status_bar.SetStatusText(f"去注释完成，文件已另存到: {output_path}")
-                wx.MessageBox(f"去注释完成，文件已另存到:\n{output_path}", "完成", wx.OK | wx.ICON_INFORMATION)
-            else:
-                # 直接覆盖原文件
-                with open(shader_path, 'w', encoding='utf-8') as f:
-                    f.write(processed_content)
+                # 去除注释
+                processed_content = self.remove_comments(content)
                 
-                self.status_bar.SetStatusText(f"去注释完成，文件已直接覆盖: {shader_path}")
-                wx.MessageBox(f"去注释完成，文件已直接覆盖:\n{shader_path}", "完成", wx.OK | wx.ICON_INFORMATION)
-            
-        except Exception as e:
-            self.status_bar.SetStatusText(f"去注释失败: {str(e)}")
-            wx.MessageBox(f"去注释失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+                if save_to_nocomment:
+                    # 构建输出文件路径
+                    output_path = os.path.join(nocomment_dir, file_name)
+                    
+                    # 写入处理后的内容
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(processed_content)
+                    
+                    success_count += 1
+                else:
+                    # 直接覆盖原文件
+                    with open(shader_path, 'w', encoding='utf-8') as f:
+                        f.write(processed_content)
+                    
+                    success_count += 1
+                    
+            except Exception as e:
+                error_messages.append(f"{file_name}: {str(e)}")
+                error_count += 1
+        
+        # 显示处理结果
+        result_message = f"处理完成！\n成功: {success_count} 个文件\n失败: {error_count} 个文件"
+        
+        if error_messages:
+            result_message += f"\n\n错误详情:\n" + "\n".join(error_messages)
+        
+        if save_to_nocomment:
+            result_message += f"\n\n文件已保存到: {nocomment_dir}"
+        
+        wx.MessageBox(result_message, "处理结果", wx.OK | wx.ICON_INFORMATION)
+        
+        # 更新状态栏
+        if error_count == 0:
+            self.status_bar.SetStatusText(f"去注释完成，成功处理 {success_count} 个文件")
+        else:
+            self.status_bar.SetStatusText(f"去注释完成，成功 {success_count} 个，失败 {error_count} 个")
     
     def remove_comments(self, content):
         """
@@ -1095,7 +1124,7 @@ class ShaderBrowser(wx.Frame):
         支持：
         1. 单行注释：以 // 开头
         2. 多行注释：以 /* 开头，以 */ 结尾
-        注意：避免删除字符串中的注释符号
+        注意：避免删除字符串中的注释符号，且不留下空行
         """
         if not content:
             return content
@@ -1110,6 +1139,9 @@ class ShaderBrowser(wx.Frame):
         in_single_comment = False  # 是否在单行注释中
         in_multi_comment = False   # 是否在多行注释中
         escaped = False            # 是否在转义字符后
+        
+        # 新增：跟踪单行注释开始的位置，用于判断是否整行都是注释
+        single_comment_start_pos = -1
         
         while i < n:
             char = content[i]
@@ -1152,6 +1184,7 @@ class ShaderBrowser(wx.Frame):
                 # 检查是否开始单行注释
                 if char == '/' and next_char == '/':
                     in_single_comment = True
+                    single_comment_start_pos = len(result)  # 记录注释开始前的结果位置
                     i += 2
                     continue
                 
@@ -1163,8 +1196,23 @@ class ShaderBrowser(wx.Frame):
             else:
                 # 在单行注释中，检查是否换行
                 if in_single_comment and char == '\n':
+                    # 检查这一行是否只有注释（即从注释开始到换行符之间没有添加任何非注释内容）
+                    # 如果 single_comment_start_pos 等于当前结果长度，说明这一行只有注释
+                    if single_comment_start_pos == len(result):
+                        # 这一行只有注释，不保留换行符（避免空行）
+                        # 但需要检查前一个字符是否是换行符，避免连续空行
+                        if result and result[-1] == '\n':
+                            # 如果前一个字符已经是换行符，则跳过当前换行符
+                            pass
+                        else:
+                            # 否则添加换行符，保持基本的行结构
+                            result.append(char)
+                    else:
+                        # 这一行有注释但也有其他内容，保留换行符
+                        result.append(char)
+                    
                     in_single_comment = False
-                    result.append(char)  # 保留换行符
+                    single_comment_start_pos = -1
                     i += 1
                     continue
                 
@@ -1180,8 +1228,53 @@ class ShaderBrowser(wx.Frame):
             
             i += 1
         
+        # 处理文件末尾的单行注释（没有换行符结尾的情况）
+        if in_single_comment and single_comment_start_pos == len(result):
+            # 文件末尾的纯注释行，直接忽略，不添加任何内容
+            pass
+        
         # 将结果列表转换为字符串
-        return ''.join(result)
+        processed_content = ''.join(result)
+        
+        # 后处理：压缩连续的空行（超过两个连续空行只保留一个）
+        return self.compress_empty_lines(processed_content)
+    
+    def compress_empty_lines(self, content):
+        """
+        压缩连续的空行：如果有多于两个连续的空行，只保留一个空行
+        改进版本：更严格地处理各种空行情况
+        """
+        if not content:
+            return content
+        
+        lines = content.splitlines(keepends=True)  # 保留换行符
+        result_lines = []
+        empty_line_count = 0
+        
+        for line in lines:
+            # 检查是否是空行（只包含空白字符，包括制表符、空格等）
+            if line.strip() == '':
+                empty_line_count += 1
+                # 如果是第一个空行，保留它
+                if empty_line_count == 1:
+                    result_lines.append(line)
+                # 如果已经有空行了，跳过这个空行（不添加到结果中）
+                else:
+                    continue
+            else:
+                # 非空行，重置空行计数
+                empty_line_count = 0
+                result_lines.append(line)
+        
+        # 将处理后的行重新组合成字符串
+        result = ''.join(result_lines)
+        
+        # 额外处理：确保文件开头和结尾没有多余的空行
+        result = result.strip('\n')
+        if result:  # 如果文件非空，确保以换行符结尾
+            result += '\n'
+        
+        return result
 
     def on_refresh(self, event):
         """处理刷新按钮点击事件：重新加载当前目录的文件"""
@@ -1243,36 +1336,84 @@ class ShaderBrowser(wx.Frame):
     
     def on_separate_frag(self, event):
         """处理分离frag按钮点击事件"""
-        # 获取选中的shader文件
-        selection = self.file_list.GetSelection()
-        if selection == wx.NOT_FOUND:
-            wx.MessageBox("请先在左侧列表中选择一个.shader文件", "提示", wx.OK | wx.ICON_WARNING)
+        # 获取选中的shader文件（多项选择）
+        selections = self.file_list.GetSelections()
+        if not selections:
+            wx.MessageBox("请先在左侧列表中选择一个或多个.shader文件", "提示", wx.OK | wx.ICON_WARNING)
             return
         
-        file_name = self.file_list.GetString(selection)
         current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
             return
         
-        shader_path = os.path.join(current_path, file_name)
+        # 获取选中的文件名列表
+        file_names = []
+        for selection in selections:
+            file_name = self.file_list.GetString(selection)
+            file_names.append(file_name)
         
-        try:
-            # 分离frag
-            frag_files = self.separate_frag_from_shader(shader_path, current_path)
-            
-            if frag_files:
-                # 更新右侧frag列表
-                self.load_frag_files(current_path)
-                self.status_bar.SetStatusText(f"成功分离出 {len(frag_files)} 个frag文件")
-                wx.MessageBox(f"成功分离出 {len(frag_files)} 个frag文件到 Frags 目录", "完成", wx.OK | wx.ICON_INFORMATION)
-            else:
-                self.status_bar.SetStatusText("未找到可分离的frag内容")
-                wx.MessageBox("未在文件中找到 #ifdef FRAGMENT 标记，无法分离frag", "提示", wx.OK | wx.ICON_WARNING)
+        # 显示提示窗口，显示所有要处理的文件
+        file_list_text = "\n".join(file_names)
+        dlg = wx.MessageDialog(
+            self,
+            f"将要处理的文件 ({len(file_names)} 个):\n\n{file_list_text}\n\n确认开始分离frag吗？",
+            "确认分离frag操作",
+            wx.YES_NO | wx.ICON_QUESTION
+        )
+        
+        if dlg.ShowModal() != wx.ID_YES:
+            dlg.Destroy()
+            self.status_bar.SetStatusText("用户取消操作")
+            return
+        
+        dlg.Destroy()
+        
+        success_count = 0
+        error_count = 0
+        error_messages = []
+        total_frag_files = 0
+        
+        # 处理每个选中的文件
+        for file_name in file_names:
+            try:
+                shader_path = os.path.join(current_path, file_name)
                 
-        except Exception as e:
-            self.status_bar.SetStatusText(f"分离frag失败: {str(e)}")
-            wx.MessageBox(f"分离frag失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+                if not os.path.exists(shader_path):
+                    error_messages.append(f"文件不存在: {shader_path}")
+                    error_count += 1
+                    continue
+                
+                # 分离frag
+                frag_files = self.separate_frag_from_shader(shader_path, current_path)
+                
+                if frag_files:
+                    success_count += 1
+                    total_frag_files += len(frag_files)
+                else:
+                    error_messages.append(f"{file_name}: 未找到可分离的frag内容")
+                    error_count += 1
+                    
+            except Exception as e:
+                error_messages.append(f"{file_name}: {str(e)}")
+                error_count += 1
+        
+        # 更新右侧frag列表
+        self.load_frag_files(current_path)
+        
+        # 显示处理结果
+        result_message = f"分离frag完成！\n成功: {success_count} 个文件\n失败: {error_count} 个文件\n总共分离出: {total_frag_files} 个frag文件"
+        
+        if error_messages:
+            result_message += f"\n\n错误详情:\n" + "\n".join(error_messages)
+        
+        wx.MessageBox(result_message, "处理结果", wx.OK | wx.ICON_INFORMATION)
+        
+        # 更新状态栏
+        if error_count == 0:
+            self.status_bar.SetStatusText(f"分离frag完成，成功处理 {success_count} 个文件，分离出 {total_frag_files} 个frag文件")
+        else:
+            self.status_bar.SetStatusText(f"分离frag完成，成功 {success_count} 个，失败 {error_count} 个")
     
     def on_open_frag(self, event):
         """处理打开变体按钮点击事件：使用系统默认程序打开选中的frag文件"""
