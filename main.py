@@ -417,7 +417,7 @@ class ShaderBrowser(wx.Frame):
         
         # 添加"另存"复选框
         self.save_checkbox = wx.CheckBox(panel, label="另存")
-        self.save_checkbox.SetValue(False)  # 默认不勾选
+        self.save_checkbox.SetValue(True)  # 默认勾选
         # 设置浅黄色背景
         self.save_checkbox.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
         hbox2.Add(self.save_checkbox, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
@@ -1120,11 +1120,139 @@ class ShaderBrowser(wx.Frame):
     
     def remove_comments(self, content):
         """
-        安全地移除shader文件中的注释
+        安全地移除shader文件中的注释，但保留文件开头的注释块
         支持：
         1. 单行注释：以 // 开头
         2. 多行注释：以 /* 开头，以 */ 结尾
         注意：避免删除字符串中的注释符号，且不留下空行
+        """
+        if not content:
+            return content
+        
+        # 第一步：识别开头的注释块
+        header_end_index = self.find_header_end(content)
+        
+        # 第二步：分别处理开头注释块和其余部分
+        if header_end_index > 0:
+            # 有开头的注释块
+            header_content = content[:header_end_index]
+            rest_content = content[header_end_index:]
+            
+            # 保留开头的注释块（不进行任何处理）
+            # 只处理其余部分的注释
+            processed_rest = self.remove_comments_from_content(rest_content)
+            
+            # 合并结果
+            result = header_content + processed_rest
+        else:
+            # 没有开头的注释块，直接处理整个内容
+            result = self.remove_comments_from_content(content)
+        
+        # 后处理：压缩连续的空行（超过两个连续空行只保留一个）
+        return self.compress_empty_lines(result)
+    
+    def find_header_end(self, content):
+        """
+        找到文件开头注释块的结束位置
+        返回结束位置的索引，如果没有开头的注释块则返回0
+        """
+        i = 0
+        n = len(content)
+        
+        # 状态标志
+        in_string = False
+        string_char = None
+        in_single_comment = False
+        in_multi_comment = False
+        escaped = False
+        
+        # 跟踪是否在开头的注释块中
+        in_header = False
+        header_end = 0
+        
+        while i < n:
+            char = content[i]
+            next_char = content[i+1] if i+1 < n else ''
+            
+            # 处理转义字符
+            if escaped:
+                escaped = False
+                i += 1
+                continue
+            
+            # 处理字符串
+            if not in_single_comment and not in_multi_comment:
+                if char == '\\':
+                    escaped = True
+                    i += 1
+                    continue
+                
+                if char in ('"', "'"):
+                    if not in_string:
+                        in_string = True
+                        string_char = char
+                    elif string_char == char:
+                        in_string = False
+                        string_char = None
+                    i += 1
+                    continue
+            
+            # 如果在字符串中，继续
+            if in_string:
+                i += 1
+                continue
+            
+            # 处理注释
+            if not in_single_comment and not in_multi_comment:
+                # 检查是否开始单行注释
+                if char == '/' and next_char == '/':
+                    in_single_comment = True
+                    in_header = True  # 进入开头的注释块
+                    i += 2
+                    continue
+                
+                # 检查是否开始多行注释
+                if char == '/' and next_char == '*':
+                    in_multi_comment = True
+                    in_header = True  # 进入开头的注释块
+                    i += 2
+                    continue
+                
+                # 如果不在注释中，并且遇到了非空白字符
+                if char not in (' ', '\t', '\n', '\r'):
+                    # 如果我们在开头的注释块中，并且遇到了非注释代码
+                    # 那么开头的注释块结束了
+                    if in_header:
+                        header_end = i
+                        break
+                    else:
+                        # 没有开头的注释块
+                        return 0
+            else:
+                # 在单行注释中，检查是否换行
+                if in_single_comment and char == '\n':
+                    in_single_comment = False
+                    i += 1
+                    continue
+                
+                # 在多行注释中，检查是否结束
+                if in_multi_comment and char == '*' and next_char == '/':
+                    in_multi_comment = False
+                    i += 2
+                    continue
+            
+            i += 1
+        
+        # 如果循环结束，但还在开头的注释块中
+        if in_header and header_end == 0:
+            header_end = n
+        
+        return header_end
+    
+    def remove_comments_from_content(self, content):
+        """
+        从内容中移除所有注释（不保留任何注释）
+        这是原始的 remove_comments 函数的逻辑
         """
         if not content:
             return content
@@ -1134,13 +1262,13 @@ class ShaderBrowser(wx.Frame):
         n = len(content)
         
         # 状态标志
-        in_string = False          # 是否在字符串中
-        string_char = None         # 字符串引号字符 (' 或 ")
-        in_single_comment = False  # 是否在单行注释中
-        in_multi_comment = False   # 是否在多行注释中
-        escaped = False            # 是否在转义字符后
+        in_string = False
+        string_char = None
+        in_single_comment = False
+        in_multi_comment = False
+        escaped = False
         
-        # 新增：跟踪单行注释开始的位置，用于判断是否整行都是注释
+        # 跟踪单行注释开始的位置
         single_comment_start_pos = -1
         
         while i < n:
@@ -1184,7 +1312,7 @@ class ShaderBrowser(wx.Frame):
                 # 检查是否开始单行注释
                 if char == '/' and next_char == '/':
                     in_single_comment = True
-                    single_comment_start_pos = len(result)  # 记录注释开始前的结果位置
+                    single_comment_start_pos = len(result)
                     i += 2
                     continue
                 
@@ -1196,19 +1324,14 @@ class ShaderBrowser(wx.Frame):
             else:
                 # 在单行注释中，检查是否换行
                 if in_single_comment and char == '\n':
-                    # 检查这一行是否只有注释（即从注释开始到换行符之间没有添加任何非注释内容）
-                    # 如果 single_comment_start_pos 等于当前结果长度，说明这一行只有注释
+                    # 检查这一行是否只有注释
                     if single_comment_start_pos == len(result):
-                        # 这一行只有注释，不保留换行符（避免空行）
-                        # 但需要检查前一个字符是否是换行符，避免连续空行
+                        # 这一行只有注释，不保留换行符
                         if result and result[-1] == '\n':
-                            # 如果前一个字符已经是换行符，则跳过当前换行符
                             pass
                         else:
-                            # 否则添加换行符，保持基本的行结构
                             result.append(char)
                     else:
-                        # 这一行有注释但也有其他内容，保留换行符
                         result.append(char)
                     
                     in_single_comment = False
@@ -1228,16 +1351,11 @@ class ShaderBrowser(wx.Frame):
             
             i += 1
         
-        # 处理文件末尾的单行注释（没有换行符结尾的情况）
+        # 处理文件末尾的单行注释
         if in_single_comment and single_comment_start_pos == len(result):
-            # 文件末尾的纯注释行，直接忽略，不添加任何内容
             pass
         
-        # 将结果列表转换为字符串
-        processed_content = ''.join(result)
-        
-        # 后处理：压缩连续的空行（超过两个连续空行只保留一个）
-        return self.compress_empty_lines(processed_content)
+        return ''.join(result)
     
     def compress_empty_lines(self, content):
         """
