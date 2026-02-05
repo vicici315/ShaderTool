@@ -287,13 +287,13 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "1.6"
+    VERSION = "1.7"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
         # 在标题中添加版本号
         full_title = f"{title} v{self.VERSION}"
-        super(ShaderBrowser, self).__init__(parent, title=full_title, size=(800, 700))
+        super(ShaderBrowser, self).__init__(parent, title=full_title, size=(900, 700))
 
         # 设置窗口图标
         self.SetIcon(self.load_icon())
@@ -409,11 +409,12 @@ class ShaderBrowser(wx.Frame):
         self.refresh_btn.SetBackgroundColour(wx.Colour(144, 238, 144))  # 浅绿色
         hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
 
-        self.refresh_btn = wx.Button(panel, label="X //", size=(50, -1))
-        self.refresh_btn.Bind(wx.EVT_BUTTON, self.del_comment)
+        self.delCom_btn = wx.Button(panel, label="X //", size=(50, -1))
+        self.delCom_btn.SetToolTip("清除shader代码注释")
+        self.delCom_btn.Bind(wx.EVT_BUTTON, self.del_comment)
         # 设置绿色背景
-        self.refresh_btn.SetBackgroundColour(wx.Colour(124, 188, 144))  # 浅绿色
-        hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+        self.delCom_btn.SetBackgroundColour(wx.Colour(124, 188, 144))  # 浅绿色
+        hbox2.Add(self.delCom_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
         
         # 添加"另存"复选框
         self.save_checkbox = wx.CheckBox(panel, label="另存")
@@ -425,9 +426,14 @@ class ShaderBrowser(wx.Frame):
         # 添加可伸缩的空间，使后面的按钮靠右对齐
         hbox2.AddStretchSpacer()
         
+        self.delFrag_btn = wx.Button(panel, label="清除变体")
+        self.delFrag_btn.Bind(wx.EVT_BUTTON, self.on_delete_frag)
+        self.delFrag_btn.SetToolTip("删除所有frag变体文件")
+        self.delFrag_btn.SetBackgroundColour(wx.Colour(250, 128, 114))  # 浅红色
+        hbox2.Add(self.delFrag_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         self.openFrag_btn = wx.Button(panel, label="打开frag变体")
         self.openFrag_btn.Bind(wx.EVT_BUTTON, self.on_open_frag)
-        self.openFrag_btn.SetBackgroundColour(wx.Colour(164, 188, 250))  # 浅绿色
+        self.openFrag_btn.SetBackgroundColour(wx.Colour(164, 188, 250))  # 浅蓝色
         hbox2.Add(self.openFrag_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         
         vbox.Add(hbox2, flag=wx.EXPAND | wx.TOP, border=10)
@@ -1730,6 +1736,84 @@ class ShaderBrowser(wx.Frame):
                 
         except Exception as e:
             self.status_bar.SetStatusText(f"加载frag文件失败: {str(e)}")
+    
+    def on_delete_frag(self, event):
+        """处理清除变体按钮点击事件：删除Frags目录中的所有.frag文件"""
+        current_path = self.path_combo.GetValue()
+        if not current_path:
+            wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        # 构建Frags目录路径
+        frags_dir = os.path.join(current_path, "Frags")
+        
+        if not os.path.isdir(frags_dir):
+            wx.MessageBox(f"Frags目录不存在: {frags_dir}", "提示", wx.OK | wx.ICON_INFORMATION)
+            return
+        
+        # 确认对话框
+        dlg = wx.MessageDialog(
+            self,
+            f"确定要删除Frags目录中的所有.frag文件吗？\n\n目录: {frags_dir}\n\n此操作不可撤销！",
+            "确认删除操作",
+            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_WARNING
+        )
+        
+        if dlg.ShowModal() != wx.ID_YES:
+            dlg.Destroy()
+            self.status_bar.SetStatusText("用户取消删除操作")
+            return
+        
+        dlg.Destroy()
+        
+        try:
+            # 统计删除的文件数量
+            deleted_count = 0
+            error_count = 0
+            error_messages = []
+            
+            # 遍历Frags目录及其子目录
+            for root, dirs, files in os.walk(frags_dir):
+                for file in files:
+                    if file.lower().endswith('.frag'):
+                        file_path = os.path.join(root, file)
+                        try:
+                            os.remove(file_path)
+                            deleted_count += 1
+                        except Exception as e:
+                            error_count += 1
+                            error_messages.append(f"{file}: {str(e)}")
+            
+            # 显示结果
+            result_message = f"删除完成！\n成功删除: {deleted_count} 个.frag文件"
+            
+            if error_count > 0:
+                result_message += f"\n失败: {error_count} 个文件"
+                if error_messages:
+                    result_message += f"\n\n错误详情:\n" + "\n".join(error_messages[:5])  # 只显示前5个错误
+                    if len(error_messages) > 5:
+                        result_message += f"\n...还有 {len(error_messages) - 5} 个错误"
+            
+            wx.MessageBox(result_message, "删除结果", wx.OK | wx.ICON_INFORMATION)
+            
+            # 更新状态栏
+            self.status_bar.SetStatusText(f"已删除 {deleted_count} 个.frag文件")
+            
+            # 刷新frag列表
+            self.load_frag_files(current_path)
+            
+            # 重置最高值显示
+            self.frag_sum_label.SetLabel("")
+            self.instructions_label.SetLabel("")
+            self.max_frag_sum_value.SetLabel("--")
+            self.max_instructions_value.SetLabel("--")
+            self.max_cycles_sum = 0
+            self.max_instructions = 0
+            
+        except Exception as e:
+            error_msg = f"删除文件时出错: {str(e)}"
+            self.status_bar.SetStatusText(error_msg)
+            wx.MessageBox(error_msg, "错误", wx.OK | wx.ICON_ERROR)
     
     def load_shader_files(self, directory):
         """加载指定目录中的所有 .shader 文件，并刷新frag列表"""

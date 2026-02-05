@@ -2,3 +2,9 @@
 /build
 /Mali_Offline_Compiler_Windows
 /dist
+*.exe
+.continue/mcpServers/new-mcp-server.yaml
+ShaderFragTool.spec
+__pycache__/main.cpython-39.pyc
+shader_browser_config.json
+test.shader
