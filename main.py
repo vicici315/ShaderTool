@@ -3,7 +3,6 @@ import os
 import json
 import sys
 
-
 class HelpDialog(wx.Dialog):
     """帮助对话框，显示Snipaste_help.png图片（使用Base64编码）"""
     def __init__(self, parent):
@@ -360,7 +359,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "2.0"
+    VERSION = "2.1"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -759,7 +758,62 @@ class ShaderBrowser(wx.Frame):
             self.instructions_label.SetLabel("")
             return
         
-        frag_file_name = self.frag_list.GetString(selection)
+        # 获取显示文本
+        display_text = self.frag_list.GetString(selection)
+        
+        # 检查是否已经包含复杂度和指令数信息
+        if " : (" in display_text and display_text.endswith(")"):
+            # 提取已有的复杂度和指令数信息
+            try:
+                # 提取括号内的内容，格式为 "(63-150)"
+                # 先找到 " : (" 的位置
+                split_pos = display_text.rfind(" : (")
+                if split_pos != -1:
+                    info_part = display_text[split_pos + 4:-1]  # 跳过 " : (" 并去掉最后的 ")"
+                    
+                    # 分割复杂度和指令数
+                    if "-" in info_part:
+                        parts = info_part.split("-")
+                        cycles_str = parts[0].strip()
+                        instructions_str = parts[1].strip()
+                        
+                        # 转换为数值
+                        current_cycles_sum = float(cycles_str)
+                        current_instructions = int(instructions_str)
+                        
+                        # 直接显示已有信息
+                        if current_cycles_sum.is_integer():
+                            display_cycles = f"复杂度:{int(current_cycles_sum)}"
+                        else:
+                            display_cycles = f"复杂度:{current_cycles_sum}"
+                        
+                        # 先设置标签文本
+                        self.frag_sum_label.SetLabel(display_cycles)
+                        self.instructions_label.SetLabel(f"指令数:{current_instructions}")
+                        
+                        # 然后根据当前复杂度设置颜色
+                        if current_cycles_sum <= 40:
+                            color = wx.Colour(0, 180, 0)  # 绿色
+                        elif current_cycles_sum <= 79:
+                            color = wx.Colour(255, 140, 0)  # 橙色
+                        else:
+                            color = wx.Colour(220, 0, 0)  # 红色
+                        
+                        self.frag_sum_label.SetForegroundColour(color)
+                        self.instructions_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
+                        
+                        # 强制刷新显示
+                        self.frag_sum_label.Refresh()
+                        self.instructions_label.Refresh()
+                        
+                        return  # 直接返回，不需要重新计算
+            except (ValueError, IndexError) as e:
+                # 如果解析失败，继续执行正常的计算流程
+                pass
+        
+        # 提取原始文件名
+        frag_file_name = self.extract_frag_filename(display_text)
+        
         current_path = self.path_combo.GetValue()
         if not current_path:
             self.frag_sum_label.SetLabel("请先选择路径")
@@ -843,24 +897,23 @@ class ShaderBrowser(wx.Frame):
             # 检查是否为整数：如果cycles_sum与它的整数部分相等，则为整数
             if cycles_sum.is_integer():
                 display_text = f"复杂度:{int(cycles_sum)}"
+                cycles_str = str(int(cycles_sum))
             else:
                 display_text = f"复杂度:{cycles_sum}"
+                cycles_str = str(cycles_sum)
             
-            # 根据总和设置颜色（与CompileResultDialog一致）
+            # 根据当前复杂度设置frag_sum_label的颜色
             if cycles_sum <= 40:
                 # 40以下：绿色 - 良好性能
                 self.frag_sum_label.SetForegroundColour(wx.Colour(0, 180, 0))  # 绿色
-                self.max_frag_sum_value.SetForegroundColour(wx.Colour(0, 180, 0))  # 绿色
             elif cycles_sum <= 79:
                 # 41~79：橙色 - 中等性能
                 self.frag_sum_label.SetForegroundColour(wx.Colour(255, 140, 0))  # 橙色
-                self.max_frag_sum_value.SetForegroundColour(wx.Colour(255, 140, 0))  # 橙色
             else:
                 # 80以上：红色 - 需要优化
                 self.frag_sum_label.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
-                self.max_frag_sum_value.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
 
-            # 更新最高复杂度
+            # 更新最高复杂度（只在当前值更高时更新）
             if cycles_sum > self.max_cycles_sum:
                 self.max_cycles_sum = cycles_sum
                 # 更新最高复杂度显示
@@ -870,6 +923,19 @@ class ShaderBrowser(wx.Frame):
                     self.max_frag_sum_value.SetLabel(str(cycles_sum))
                 # 更新frag文件名显示（只在最高值出现时更新）
                 self.frag_name_label.SetLabel(f"{frag_file_name}:")
+                
+                # 根据最高复杂度设置max_frag_sum_value的颜色
+                if cycles_sum <= 40:
+                    self.max_frag_sum_value.SetForegroundColour(wx.Colour(0, 180, 0))  # 绿色
+                elif cycles_sum <= 79:
+                    self.max_frag_sum_value.SetForegroundColour(wx.Colour(255, 140, 0))  # 橙色
+                else:
+                    self.max_frag_sum_value.SetForegroundColour(wx.Colour(220, 0, 0))  # 红色
+            
+            # 更新列表项显示名称，添加复杂度和指令数信息
+            if instructions is not None:
+                display_name = f"{frag_file_name} : ({cycles_str}-{instructions})"
+                self.update_frag_list_item(frag_file_name, display_name)
         else:
             display_text = "--"
             self.frag_sum_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
@@ -1007,7 +1073,10 @@ class ShaderBrowser(wx.Frame):
             wx.MessageBox("请先在右侧列表中选择一个.frag文件", "提示", wx.OK | wx.ICON_WARNING)
             return
         
-        frag_file_name = self.frag_list.GetString(selection)
+        # 获取显示文本并提取原始文件名
+        display_text = self.frag_list.GetString(selection)
+        frag_file_name = self.extract_frag_filename(display_text)
+        
         current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
@@ -1648,7 +1717,10 @@ class ShaderBrowser(wx.Frame):
             wx.MessageBox("请先在右侧列表中选择一个.frag文件", "提示", wx.OK | wx.ICON_WARNING)
             return
         
-        frag_file_name = self.frag_list.GetString(selection)
+        # 获取显示文本并提取原始文件名
+        display_text = self.frag_list.GetString(selection)
+        frag_file_name = self.extract_frag_filename(display_text)
+        
         current_path = self.path_combo.GetValue()
         if not current_path:
             wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
@@ -1972,6 +2044,17 @@ class ShaderBrowser(wx.Frame):
                     # 提取Instructions Emitted值
                     instructions = self.extract_instructions_emitted(output)
                     
+                    # 在frag列表中更新该文件的显示，添加复杂度和指令数信息
+                    if cycles_sum is not None and instructions is not None:
+                        # 格式化复杂度值（如果是整数则不显示小数点）
+                        if cycles_sum.is_integer():
+                            cycles_str = str(int(cycles_sum))
+                        else:
+                            cycles_str = str(cycles_sum)
+                        
+                        display_name = f"{frag_file} : ({cycles_str}-{instructions})"
+                        wx.CallAfter(self.update_frag_list_item, frag_file, display_name)
+                    
                     if cycles_sum is not None and cycles_sum > max_cycles_sum:
                         max_cycles_sum = cycles_sum
                         max_frag_file = frag_file
@@ -2022,6 +2105,28 @@ class ShaderBrowser(wx.Frame):
             error_msg = f"查找最高复杂度失败: {str(e)}"
             wx.CallAfter(self.status_bar.SetStatusText, error_msg)
             wx.CallAfter(wx.MessageBox, error_msg, "错误", wx.OK | wx.ICON_ERROR)
+    
+    def update_frag_list_item(self, original_name, display_name):
+        """更新frag列表中指定项的显示名称"""
+        # 查找原始文件名在列表中的位置
+        for i in range(self.frag_list.GetCount()):
+            item_text = self.frag_list.GetString(i)
+            # 检查是否匹配原始文件名（可能已经包含复杂度信息）
+            if item_text == original_name or item_text.startswith(original_name + " :"):
+                self.frag_list.SetString(i, display_name)
+                break
+    
+    def extract_frag_filename(self, display_text):
+        """从显示文本中提取原始文件名，去除复杂度信息
+        例如: 'file_001.frag : (63-150)' -> 'file_001.frag'
+        """
+        # 检查是否包含复杂度信息
+        if " : (" in display_text:
+            # 提取冒号前的文件名
+            return display_text.split(" : (")[0]
+        else:
+            # 没有复杂度信息，直接返回
+            return display_text
     
     def update_highest_frag_display(self, max_cycles_sum, max_instructions, max_frag_file):
         """更新最高复杂度显示"""
