@@ -63,7 +63,7 @@ class HelpDialog(wx.Dialog):
                     vbox.Add(static_bitmap, flag=wx.ALIGN_CENTER | wx.ALL, border=10)
                     
                     # 添加帮助文本
-                    help_text = "Shader 在 Unity 中编译输出设置选项如上图"
+                    help_text = "Shader 在 Unity 中编译输出，选项设置如上图"
                     help_label = wx.StaticText(panel, label=help_text)
                     help_label.SetFont(wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
                     help_label.SetForegroundColour(wx.Colour(0, 100, 200))  # 蓝色
@@ -118,6 +118,77 @@ class HelpDialog(wx.Dialog):
     
     def on_close(self, event):
         """处理关闭事件"""
+        self.Destroy()
+
+
+class ProgressDialog(wx.Dialog):
+    """进度对话框"""
+    def __init__(self, parent, title="处理中...", message="正在处理，请稍候..."):
+        super().__init__(parent, title=title, size=(400, 150))
+        
+        # 设置对话框样式
+        self.SetExtraStyle(wx.DIALOG_EX_CONTEXTHELP)
+        
+        # 创建面板
+        panel = wx.Panel(self)
+        
+        # 创建垂直布局
+        vbox = wx.BoxSizer(wx.VERTICAL)
+        
+        # 添加消息文本
+        self.message_label = wx.StaticText(panel, label=message)
+        self.message_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        vbox.Add(self.message_label, flag=wx.ALIGN_LEFT | wx.TOP, border=20)
+        
+        # 添加进度条
+        self.gauge = wx.Gauge(panel, range=100, size=(350, 25))
+        vbox.Add(self.gauge, flag=wx.ALIGN_CENTER | wx.TOP, border=10)
+        
+        # 添加进度文本
+        self.progress_label = wx.StaticText(panel, label="0/0 (0%)")
+        self.progress_label.SetFont(wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        vbox.Add(self.progress_label, flag=wx.ALIGN_CENTER | wx.TOP, border=5)
+        
+        # 设置面板布局
+        panel.SetSizer(vbox)
+        
+        # 居中显示
+        self.Centre()
+        
+        # 绑定关闭事件
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+        
+        # 禁用对话框的关闭按钮（防止用户手动关闭）
+        self.SetWindowStyleFlag(self.GetWindowStyleFlag() & ~wx.CLOSE_BOX)
+    
+    def update_progress(self, current, total, message=None):
+        """更新进度"""
+        if message:
+            self.message_label.SetLabel(message)
+        
+        # 计算百分比
+        if total > 0:
+            percent = int((current / total) * 100)
+            self.gauge.SetValue(percent)
+            self.progress_label.SetLabel(f"{current}/{total} ({percent}%)")
+        else:
+            self.gauge.SetValue(0)
+            self.progress_label.SetLabel("0/0 (0%)")
+        
+        # 强制更新UI
+        self.Update()
+        self.Refresh()
+    
+    def on_close(self, event):
+        """处理关闭事件 - 阻止用户手动关闭"""
+        # 不执行任何操作，阻止关闭
+        pass
+    
+    def close_dialog(self):
+        """安全关闭对话框"""
+        # 解除事件绑定
+        self.Unbind(wx.EVT_CLOSE)
+        # 关闭对话框
         self.Destroy()
 
 
@@ -279,15 +350,17 @@ class CompileResultDialog(wx.Dialog):
     @staticmethod
     def copy_to_clipboard(text):
         """复制文本到剪贴板"""
+        import wx
         if wx.TheClipboard.Open():
             wx.TheClipboard.SetData(wx.TextDataObject(text))
             wx.TheClipboard.Close()
-            # wx.MessageBox("结果已复制到剪贴板", "提示", wx.OK | wx.ICON_INFORMATION)
+            return True
+        return False
 
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "1.7"
+    VERSION = "2.0"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -397,17 +470,17 @@ class ShaderBrowser(wx.Frame):
         # 第二行：操作按钮
         hbox2 = wx.BoxSizer(wx.HORIZONTAL)
 
-        self.workFrag_btn = wx.Button(panel, label="分离frag")
-        self.workFrag_btn.Bind(wx.EVT_BUTTON, self.on_separate_frag)
-        # 设置浅蓝色背景
-        self.workFrag_btn.SetBackgroundColour(wx.Colour(173, 216, 230))  # 浅蓝色
-        hbox2.Add(self.workFrag_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
-        
         self.refresh_btn = wx.Button(panel, label="刷新")
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
         # 设置绿色背景
         self.refresh_btn.SetBackgroundColour(wx.Colour(144, 238, 144))  # 浅绿色
         hbox2.Add(self.refresh_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+
+        self.workFrag_btn = wx.Button(panel, label="分离frag")
+        self.workFrag_btn.Bind(wx.EVT_BUTTON, self.on_separate_frag)
+        # 设置浅蓝色背景
+        self.workFrag_btn.SetBackgroundColour(wx.Colour(173, 216, 230))  # 浅蓝色
+        hbox2.Add(self.workFrag_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
 
         self.delCom_btn = wx.Button(panel, label="X //", size=(50, -1))
         self.delCom_btn.SetToolTip("清除shader代码注释")
@@ -426,15 +499,20 @@ class ShaderBrowser(wx.Frame):
         # 添加可伸缩的空间，使后面的按钮靠右对齐
         hbox2.AddStretchSpacer()
         
+        self.findHighest_btn = wx.Button(panel, label="最高复杂度")
+        self.findHighest_btn.Bind(wx.EVT_BUTTON, self.on_findHighest_frag)
+        self.findHighest_btn.SetToolTip("找到着色器左边列表选中材质的最高复杂度变体")
+        self.findHighest_btn.SetBackgroundColour(wx.Colour(173, 216, 230))
+        hbox2.Add(self.findHighest_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
+        self.openFrag_btn = wx.Button(panel, label="打开frag变体")
+        self.openFrag_btn.Bind(wx.EVT_BUTTON, self.on_open_frag)
+        self.openFrag_btn.SetBackgroundColour(wx.Colour(164, 188, 250))  # 浅蓝色
+        hbox2.Add(self.openFrag_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         self.delFrag_btn = wx.Button(panel, label="清除变体")
         self.delFrag_btn.Bind(wx.EVT_BUTTON, self.on_delete_frag)
         self.delFrag_btn.SetToolTip("删除所有frag变体文件")
         self.delFrag_btn.SetBackgroundColour(wx.Colour(250, 128, 114))  # 浅红色
         hbox2.Add(self.delFrag_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
-        self.openFrag_btn = wx.Button(panel, label="打开frag变体")
-        self.openFrag_btn.Bind(wx.EVT_BUTTON, self.on_open_frag)
-        self.openFrag_btn.SetBackgroundColour(wx.Colour(164, 188, 250))  # 浅蓝色
-        hbox2.Add(self.openFrag_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         
         vbox.Add(hbox2, flag=wx.EXPAND | wx.TOP, border=10)
         
@@ -812,6 +890,12 @@ class ShaderBrowser(wx.Frame):
                 self.max_instructions_value.SetLabel(str(instructions))
                 # 更新frag文件名显示（只在最高值出现时更新）
                 self.frag_name_label.SetLabel(f"{frag_file_name}:")
+                if instructions <= 40:
+                    self.max_instructions_value.SetForegroundColour(wx.Colour(0, 180, 0))
+                elif instructions <= 79:
+                    self.max_instructions_value.SetForegroundColour(wx.Colour(255, 140, 0))
+                else:
+                    self.max_instructions_value.SetForegroundColour(wx.Colour(220, 0, 0))
         else:
             self.instructions_label.SetLabel("")
     
@@ -830,6 +914,8 @@ class ShaderBrowser(wx.Frame):
                         # 提取所有数字（可能用逗号、空格分隔，包括小数）
                         import re
                         # 匹配整数和小数，例如：1.7, 2, 0.5, 3.14
+                        # 改进：只匹配紧跟在"Longest Path Cycles:"后面的数字
+                        # 格式通常是: Longest Path Cycles: 1.7, 2, 0.5
                         numbers = re.findall(r'\d+\.?\d*', values_str)
                         
                         if len(numbers) >= 3:
@@ -841,6 +927,19 @@ class ShaderBrowser(wx.Frame):
                                 return num1 + num2 + num3
                             except ValueError:
                                 return None
+                        else:
+                            # 尝试其他格式，比如用逗号分隔
+                            # 格式: Longest Path Cycles: 1.7,2,0.5
+                            values_str = values_str.replace(',', ' ')
+                            numbers = re.findall(r'\d+\.?\d*', values_str)
+                            if len(numbers) >= 3:
+                                try:
+                                    num1 = float(numbers[0])
+                                    num2 = float(numbers[1])
+                                    num3 = float(numbers[2])
+                                    return num1 + num2 + num3
+                                except ValueError:
+                                    return None
             return None
         except Exception as e:
             print(f"计算Longest Path Cycles总和时出错: {e}")
@@ -1413,7 +1512,9 @@ class ShaderBrowser(wx.Frame):
         self.frag_sum_label.SetLabel("--")
         self.instructions_label.SetLabel("--")
         self.max_frag_sum_value.SetLabel("--")
+        self.max_frag_sum_value.SetForegroundColour(wx.Colour(0, 100, 200))  # 重置为蓝色
         self.max_instructions_value.SetLabel("--")
+        self.max_instructions_value.SetForegroundColour(wx.Colour(0, 100, 200))  # 重置为蓝色
         self.max_cycles_sum = 0
         self.max_instructions = 0
         try:
@@ -1737,6 +1838,218 @@ class ShaderBrowser(wx.Frame):
         except Exception as e:
             self.status_bar.SetStatusText(f"加载frag文件失败: {str(e)}")
     
+    def on_findHighest_frag(self, event):
+        """处理最高复杂度按钮点击事件：找到选中shader的最高复杂度变体"""
+        # 获取选中的shader文件（多项选择）
+        selections = self.file_list.GetSelections()
+        if not selections:
+            wx.MessageBox("请先在左侧列表中选择一个或多个.shader文件", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        current_path = self.path_combo.GetValue()
+        if not current_path:
+            wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        # 获取选中的文件名列表
+        file_names = []
+        for selection in selections:
+            file_name = self.file_list.GetString(selection)
+            file_names.append(file_name)
+        
+        # 显示提示窗口，显示所有要处理的文件
+        file_list_text = "\n".join(file_names)
+        dlg = wx.MessageDialog(
+            self,
+            f"将要查找最高复杂度的文件 ({len(file_names)} 个):\n\n{file_list_text}\n\n确认开始查找吗？",
+            "确认查找最高复杂度",
+            wx.YES_NO | wx.ICON_QUESTION
+        )
+        
+        if dlg.ShowModal() != wx.ID_YES:
+            dlg.Destroy()
+            self.status_bar.SetStatusText("用户取消操作")
+            return
+        
+        dlg.Destroy()
+        
+        # 在新线程中执行查找，避免界面卡顿
+        import threading
+        thread = threading.Thread(
+            target=self.find_highest_frag_in_thread,
+            args=(file_names, current_path)
+        )
+        thread.daemon = True
+        thread.start()
+
+    def find_highest_frag_in_thread(self, file_names, current_path):
+        """在新线程中查找最高复杂度变体"""
+        try:
+            # 在主线程中更新状态栏
+            wx.CallAfter(self.status_bar.SetStatusText, f"正在查找最高复杂度变体...")
+            
+            # 查找malisc.exe
+            malisc_path = self.find_malisc_exe()
+            if not malisc_path:
+                wx.CallAfter(self.status_bar.SetStatusText, "未找到malisc.exe")
+                wx.CallAfter(wx.MessageBox, 
+                    "未找到 malisc.exe\n请确保 Mali_Offline_Compiler_Windows 目录存在且包含 malisc.exe",
+                    "错误", wx.OK | wx.ICON_ERROR)
+                return
+            
+            # 检查Frags目录是否存在
+            frags_dir = os.path.join(current_path, "Frags")
+            need_separate = False
+            
+            # 检查每个选中的shader文件是否有对应的frag文件
+            for file_name in file_names:
+                shader_name = os.path.splitext(file_name)[0]
+                # 检查是否有以shader_name开头的frag文件
+                if os.path.exists(frags_dir):
+                    # 使用更精确的匹配：frag文件名必须以shader_name + "_"开头，并且以数字编号结尾
+                    import re
+                    pattern = re.compile(rf'^{re.escape(shader_name)}_\d{{3}}\.frag$', re.IGNORECASE)
+                    frag_files = [f for f in os.listdir(frags_dir) 
+                                 if pattern.match(f)]
+                    if not frag_files:
+                        need_separate = True
+                        break
+                else:
+                    need_separate = True
+                    break
+            
+            # 如果需要分离变体，先分离
+            if need_separate:
+                wx.CallAfter(self.status_bar.SetStatusText, "正在分离frag变体...")
+                for file_name in file_names:
+                    shader_path = os.path.join(current_path, file_name)
+                    if os.path.exists(shader_path):
+                        self.separate_frag_from_shader(shader_path, current_path)
+            
+            # 刷新frag列表
+            wx.CallAfter(self.load_frag_files, current_path)
+            
+            # 收集所有需要处理的frag文件
+            frag_files_to_process = []
+            if os.path.exists(frags_dir):
+                for file_name in file_names:
+                    shader_name = os.path.splitext(file_name)[0]
+                    # 查找所有以shader_name开头的frag文件
+                    # 使用更精确的匹配：frag文件名必须以shader_name + "_"开头，并且以数字编号结尾
+                    import re
+                    pattern = re.compile(rf'^{re.escape(shader_name)}_\d{{3}}\.frag$', re.IGNORECASE)
+                    for frag_file in os.listdir(frags_dir):
+                        if pattern.match(frag_file):
+                            frag_file_path = os.path.join(frags_dir, frag_file)
+                            frag_files_to_process.append((frag_file, frag_file_path))
+            
+            if not frag_files_to_process:
+                wx.CallAfter(self.update_highest_frag_display, 0, 0, "")
+                wx.CallAfter(self.status_bar.SetStatusText, "未找到对应的frag变体文件")
+                return
+            
+            # 创建进度对话框
+            wx.CallAfter(self.show_progress_dialog, len(frag_files_to_process))
+            
+            # 查找所有相关frag文件的最高复杂度
+            max_cycles_sum = 0
+            max_instructions = 0
+            max_frag_file = ""
+            
+            for i, (frag_file, frag_file_path) in enumerate(frag_files_to_process):
+                # 更新进度
+                wx.CallAfter(self.update_progress, i, len(frag_files_to_process), f"正在处理: {frag_file}")
+                
+                # 编译并计算复杂度
+                cmd = f'powershell -Command "& \'{malisc_path}\' \'{frag_file_path}\'"'
+                import subprocess
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8')
+                
+                if result.returncode == 0:
+                    output = result.stdout
+                    # 计算Longest Path Cycles总和
+                    cycles_sum = self.calculate_longest_path_cycles_sum(output)
+                    # 提取Instructions Emitted值
+                    instructions = self.extract_instructions_emitted(output)
+                    
+                    if cycles_sum is not None and cycles_sum > max_cycles_sum:
+                        max_cycles_sum = cycles_sum
+                        max_frag_file = frag_file
+                    
+                    if instructions is not None and instructions > max_instructions:
+                        max_instructions = instructions
+
+
+            # 关闭进度对话框
+            wx.CallAfter(self.close_progress_dialog)
+            
+            # 在主线程中更新显示
+            wx.CallAfter(self.update_highest_frag_display, max_cycles_sum, max_instructions, max_frag_file)
+            
+            # 在主线程中根据最高复杂度值设置颜色
+            if max_cycles_sum > 0:
+                if max_cycles_sum <= 40:
+                    # 40以下：绿色 - 良好性能
+                    wx.CallAfter(self.max_frag_sum_value.SetForegroundColour, wx.Colour(0, 180, 0))
+                    wx.CallAfter(self.max_instructions_value.SetForegroundColour, wx.Colour(0, 180, 0))
+                elif max_cycles_sum <= 79:
+                    # 41~79：橙色 - 中等性能
+                    wx.CallAfter(self.max_frag_sum_value.SetForegroundColour, wx.Colour(255, 140, 0))
+                    wx.CallAfter(self.max_instructions_value.SetForegroundColour, wx.Colour(255, 140, 0))
+                else:
+                    # 80以上：红色 - 需要优化
+                    wx.CallAfter(self.max_frag_sum_value.SetForegroundColour, wx.Colour(220, 0, 0))
+                    wx.CallAfter(self.max_instructions_value.SetForegroundColour, wx.Colour(220, 0, 0))
+            else:
+                # 无数据：蓝色
+                wx.CallAfter(self.max_frag_sum_value.SetForegroundColour, wx.Colour(0, 100, 200))
+                wx.CallAfter(self.max_instructions_value.SetForegroundColour, wx.Colour(0, 100, 200))
+            
+            # 刷新界面显示
+            wx.CallAfter(self.max_frag_sum_value.Refresh)
+            wx.CallAfter(self.max_instructions_value.Refresh)
+            
+            # 在主线程中更新状态栏
+            if max_frag_file:
+                wx.CallAfter(self.status_bar.SetStatusText, f"找到最高复杂度变体: {max_frag_file}")
+            else:
+                wx.CallAfter(self.status_bar.SetStatusText, "未找到有效的frag变体")
+                
+        except Exception as e:
+            # 关闭进度对话框
+            wx.CallAfter(self.close_progress_dialog)
+            
+            error_msg = f"查找最高复杂度失败: {str(e)}"
+            wx.CallAfter(self.status_bar.SetStatusText, error_msg)
+            wx.CallAfter(wx.MessageBox, error_msg, "错误", wx.OK | wx.ICON_ERROR)
+    
+    def update_highest_frag_display(self, max_cycles_sum, max_instructions, max_frag_file):
+        """更新最高复杂度显示"""
+        # 更新内部变量
+        # self.max_cycles_sum = max_cycles_sum
+        # self.max_instructions = max_instructions
+        
+        # 更新最高复杂度显示
+        if max_cycles_sum > 0:
+            if max_cycles_sum.is_integer():
+                self.max_frag_sum_value.SetLabel(str(int(max_cycles_sum)))
+            else:
+                self.max_frag_sum_value.SetLabel(str(max_cycles_sum))
+        else:
+            self.max_frag_sum_value.SetLabel("--")
+        
+        # 更新最高指令数显示
+        if max_instructions > 0:
+            self.max_instructions_value.SetLabel(str(max_instructions))
+        else:
+            self.max_instructions_value.SetLabel("--")
+        
+        # 更新frag文件名显示
+        if max_frag_file:
+            self.frag_name_label.SetLabel(f"{max_frag_file}:")
+        else:
+            self.frag_name_label.SetLabel("")
+
     def on_delete_frag(self, event):
         """处理清除变体按钮点击事件：删除Frags目录中的所有.frag文件"""
         current_path = self.path_combo.GetValue()
@@ -1787,14 +2100,14 @@ class ShaderBrowser(wx.Frame):
             # 显示结果
             result_message = f"删除完成！\n成功删除: {deleted_count} 个.frag文件"
             
-            if error_count > 0:
-                result_message += f"\n失败: {error_count} 个文件"
-                if error_messages:
-                    result_message += f"\n\n错误详情:\n" + "\n".join(error_messages[:5])  # 只显示前5个错误
-                    if len(error_messages) > 5:
-                        result_message += f"\n...还有 {len(error_messages) - 5} 个错误"
-            
-            wx.MessageBox(result_message, "删除结果", wx.OK | wx.ICON_INFORMATION)
+            # if error_count > 0:
+            #     result_message += f"\n失败: {error_count} 个文件"
+            #     if error_messages:
+            #         result_message += f"\n\n错误详情:\n" + "\n".join(error_messages[:5])  # 只显示前5个错误
+            #         if len(error_messages) > 5:
+            #             result_message += f"\n...还有 {len(error_messages) - 5} 个错误"
+            #
+            # wx.MessageBox(result_message, "删除结果", wx.OK | wx.ICON_INFORMATION)
             
             # 更新状态栏
             self.status_bar.SetStatusText(f"已删除 {deleted_count} 个.frag文件")
@@ -1806,7 +2119,9 @@ class ShaderBrowser(wx.Frame):
             self.frag_sum_label.SetLabel("")
             self.instructions_label.SetLabel("")
             self.max_frag_sum_value.SetLabel("--")
+            self.max_frag_sum_value.SetForegroundColour(wx.Colour(0, 100, 200))  # 重置为蓝色
             self.max_instructions_value.SetLabel("--")
+            self.max_instructions_value.SetForegroundColour(wx.Colour(0, 100, 200))  # 重置为蓝色
             self.max_cycles_sum = 0
             self.max_instructions = 0
             
@@ -1814,6 +2129,23 @@ class ShaderBrowser(wx.Frame):
             error_msg = f"删除文件时出错: {str(e)}"
             self.status_bar.SetStatusText(error_msg)
             wx.MessageBox(error_msg, "错误", wx.OK | wx.ICON_ERROR)
+    
+    def show_progress_dialog(self, total_items):
+        """显示进度对话框"""
+        self.progress_dialog = ProgressDialog(self, title="查找最高复杂度", message="正在处理frag文件...")
+        self.progress_dialog.Show()
+        self.progress_dialog.update_progress(0, total_items)
+    
+    def update_progress(self, current, total, message=None):
+        """更新进度对话框"""
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.update_progress(current, total, message)
+    
+    def close_progress_dialog(self):
+        """关闭进度对话框"""
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.close_dialog()
+            self.progress_dialog = None
     
     def load_shader_files(self, directory):
         """加载指定目录中的所有 .shader 文件，并刷新frag列表"""
