@@ -359,7 +359,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "2.1"
+    VERSION = "2.2"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -482,12 +482,19 @@ class ShaderBrowser(wx.Frame):
         hbox2.Add(self.workFrag_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
 
         self.delCom_btn = wx.Button(panel, label="X //", size=(50, -1))
-        self.delCom_btn.SetToolTip("清除shader代码注释")
+        self.delCom_btn.SetToolTip("清除shader代码注释，保留顶部注释")
         self.delCom_btn.Bind(wx.EVT_BUTTON, self.del_comment)
         # 设置绿色背景
         self.delCom_btn.SetBackgroundColour(wx.Colour(124, 188, 144))  # 浅绿色
         hbox2.Add(self.delCom_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
-        
+
+        self.delOtherCom_btn = wx.Button(panel, label="<summary>", size=(80, -1))
+        self.delOtherCom_btn.SetToolTip("清除代码注释中的多余内容")
+        self.delOtherCom_btn.Bind(wx.EVT_BUTTON, self.del_othercomment)
+        # 设置绿色背景
+        self.delOtherCom_btn.SetBackgroundColour(wx.Colour(124, 188, 144))  # 浅绿色
+        hbox2.Add(self.delOtherCom_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+
         # 添加"另存"复选框
         self.save_checkbox = wx.CheckBox(panel, label="另存")
         self.save_checkbox.SetValue(True)  # 默认勾选
@@ -1008,7 +1015,8 @@ class ShaderBrowser(wx.Frame):
                                     return None
             return None
         except Exception as e:
-            print(f"计算Longest Path Cycles总和时出错: {e}")
+            # 将控制台错误改为状态栏提示
+            wx.CallAfter(self.status_bar.SetStatusText, f"计算Longest Path Cycles总和时出错: {str(e)[:50]}...")
             return None
     
     def extract_instructions_emitted(self, output):
@@ -1036,7 +1044,8 @@ class ShaderBrowser(wx.Frame):
                                 return None
             return None
         except Exception as e:
-            print(f"提取Instructions Emitted时出错: {e}")
+            # 将控制台错误改为状态栏提示
+            wx.CallAfter(self.status_bar.SetStatusText, f"提取Instructions Emitted时出错: {str(e)[:50]}...")
             return None
     
     def on_key_press(self, event):
@@ -1291,6 +1300,108 @@ class ShaderBrowser(wx.Frame):
             self.status_bar.SetStatusText(f"去注释完成，成功处理 {success_count} 个文件")
         else:
             self.status_bar.SetStatusText(f"去注释完成，成功 {success_count} 个，失败 {error_count} 个")
+    
+    def del_othercomment(self, event):
+        """处理清除注释中多余内容按钮点击事件：移除注释中的<summary>标签等多余内容"""
+        # 获取选中的shader文件（多项选择）
+        selections = self.file_list.GetSelections()
+        if not selections:
+            wx.MessageBox("请先在左侧列表中选择一个或多个.shader文件", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        current_path = self.path_combo.GetValue()
+        if not current_path:
+            wx.MessageBox("请先选择或输入路径", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        # 获取选中的文件名列表
+        file_names = []
+        for selection in selections:
+            file_name = self.file_list.GetString(selection)
+            file_names.append(file_name)
+        
+        # 显示提示窗口，显示所有要处理的文件
+        file_list_text = "\n".join(file_names)
+        dlg = wx.MessageDialog(
+            self,
+            f"将要处理的文件 ({len(file_names)} 个):\n\n{file_list_text}\n\n确认开始清除注释中的多余内容吗？",
+            "确认清除注释多余内容操作",
+            wx.YES_NO | wx.ICON_QUESTION
+        )
+        
+        if dlg.ShowModal() != wx.ID_YES:
+            dlg.Destroy()
+            self.status_bar.SetStatusText("用户取消操作")
+            return
+        
+        dlg.Destroy()
+        
+        # 检查"另存"复选框状态
+        save_to_nocomment = self.save_checkbox.GetValue()
+        
+        # 创建nocomment目录（如果需要）
+        if save_to_nocomment:
+            nocomment_dir = os.path.join(current_path, "nocomment")
+            os.makedirs(nocomment_dir, exist_ok=True)
+        
+        success_count = 0
+        error_count = 0
+        error_messages = []
+        
+        # 处理每个选中的文件
+        for file_name in file_names:
+            try:
+                # 构建shader文件的完整路径
+                shader_path = os.path.join(current_path, file_name)
+                
+                if not os.path.exists(shader_path):
+                    error_messages.append(f"文件不存在: {shader_path}")
+                    error_count += 1
+                    continue
+                
+                # 读取文件内容
+                with open(shader_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 移除注释中的多余内容（如<summary>标签）
+                processed_content = self.remove_other_comments(content)
+                
+                if save_to_nocomment:
+                    # 构建输出文件路径
+                    output_path = os.path.join(nocomment_dir, file_name)
+                    
+                    # 写入处理后的内容
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(processed_content)
+                    
+                    success_count += 1
+                else:
+                    # 直接覆盖原文件
+                    with open(shader_path, 'w', encoding='utf-8') as f:
+                        f.write(processed_content)
+                    
+                    success_count += 1
+                    
+            except Exception as e:
+                error_messages.append(f"{file_name}: {str(e)}")
+                error_count += 1
+        
+        # 显示处理结果
+        result_message = f"处理完成！\n成功: {success_count} 个文件\n失败: {error_count} 个文件"
+        
+        if error_messages:
+            result_message += f"\n\n错误详情:\n" + "\n".join(error_messages)
+        
+        if save_to_nocomment:
+            result_message += f"\n\n文件已保存到: {nocomment_dir}"
+        
+        wx.MessageBox(result_message, "处理结果", wx.OK | wx.ICON_INFORMATION)
+        
+        # 更新状态栏
+        if error_count == 0:
+            self.status_bar.SetStatusText(f"清除注释多余内容完成，成功处理 {success_count} 个文件")
+        else:
+            self.status_bar.SetStatusText(f"清除注释多余内容完成，成功 {success_count} 个，失败 {error_count} 个")
     
     def remove_comments(self, content):
         """
@@ -1567,6 +1678,66 @@ class ShaderBrowser(wx.Frame):
             result += '\n'
         
         return result
+    
+    def remove_other_comments(self, content):
+        """
+        移除包含<summary>和</summary>标签的整行注释
+        """
+        if not content:
+            return content
+
+        lines = content.splitlines(keepends=True)
+        result_lines = []
+
+        for line in lines:
+            # 检查行中是否包含<summary>或</summary>标签
+            # 同时确保这些标签在注释中
+            line_lower = line.lower()
+
+            # 检查是否是包含这些标签的注释行
+            is_comment_line = False
+            has_summary_tag = False
+
+            # 检查是否包含summary标签
+            if '<summary>' in line_lower or '</summary>' in line_lower:
+                has_summary_tag = True
+
+                # 检查是否在注释中
+                # 查找注释符号的位置
+                single_comment_pos = line.find('//')
+                multi_comment_start = line.find('/*')
+
+                # 查找标签的位置
+                summary_start_pos = line_lower.find('<summary>')
+                summary_end_pos = line_lower.find('</summary>')
+                tag_pos = -1
+
+                if summary_start_pos != -1:
+                    tag_pos = summary_start_pos
+                elif summary_end_pos != -1:
+                    tag_pos = summary_end_pos
+
+                # 判断标签是否在注释中
+                if single_comment_pos != -1 and tag_pos > single_comment_pos:
+                    is_comment_line = True
+                elif multi_comment_start != -1 and tag_pos > multi_comment_start:
+                    is_comment_line = True
+
+            # 如果是包含summary标签的注释行，跳过该行
+            if has_summary_tag and is_comment_line:
+                continue
+
+            # 否则保留该行
+            result_lines.append(line)
+
+        # 重新组合内容
+        result = ''.join(result_lines)
+
+        # 压缩空行
+        result = self.compress_empty_lines(result)
+
+        return result
+
 
     def on_refresh(self, event):
         """处理刷新按钮点击事件：重新加载当前目录的文件"""
@@ -2253,7 +2424,7 @@ class ShaderBrowser(wx.Frame):
             self.progress_dialog = None
     
     def load_shader_files(self, directory):
-        """加载指定目录中的所有 .shader 文件，并刷新frag列表"""
+        """加载指定目录中的所有 .shader 和 .cs 文件，并刷新frag列表"""
         self.file_list.Clear()
         
         # 保存路径到配置文件
@@ -2264,22 +2435,33 @@ class ShaderBrowser(wx.Frame):
             return
         
         try:
-            # 获取所有 .shader 文件
+            # 获取所有 .shader 和 .cs 文件
             shader_files = []
+            cs_files = []
             for root, dirs, files in os.walk(directory):
                 for file in files:
-                    if file.lower().endswith('.shader'):
+                    file_lower = file.lower()
+                    if file_lower.endswith('.shader'):
                         full_path = os.path.join(root, file)
                         # 显示相对路径
                         rel_path = os.path.relpath(full_path, directory)
                         shader_files.append(rel_path)
+                    elif file_lower.endswith('.cs'):
+                        full_path = os.path.join(root, file)
+                        # 显示相对路径
+                        rel_path = os.path.relpath(full_path, directory)
+                        cs_files.append(rel_path)
             
-            if shader_files:
-                shader_files.sort()  # 按字母顺序排序
-                self.file_list.Set(shader_files)
-                self.status_bar.SetStatusText(f"找到 {len(shader_files)} 个 .shader 文件")
+            # 合并并排序文件列表
+            all_files = shader_files + cs_files
+            if all_files:
+                all_files.sort()  # 按字母顺序排序
+                self.file_list.Set(all_files)
+                shader_count = len(shader_files)
+                cs_count = len(cs_files)
+                self.status_bar.SetStatusText(f"找到 {shader_count} 个 .shader 文件, {cs_count} 个 .cs 文件")
             else:
-                self.status_bar.SetStatusText("未找到 .shader 文件")
+                self.status_bar.SetStatusText("未找到 .shader 或 .cs 文件")
             
             # 无论是否找到.shader文件，都尝试加载frag文件
             self.load_frag_files(directory)
