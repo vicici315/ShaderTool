@@ -500,6 +500,8 @@ class ShaderBrowser(wx.Frame):
         self.save_checkbox.SetValue(True)  # 默认勾选
         # 设置浅黄色背景
         self.save_checkbox.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
+        # 绑定状态改变事件，保存配置
+        self.save_checkbox.Bind(wx.EVT_CHECKBOX, self.on_save_checkbox_changed)
         hbox2.Add(self.save_checkbox, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
 
         # 添加可伸缩的空间，使后面的按钮靠右对齐
@@ -507,7 +509,7 @@ class ShaderBrowser(wx.Frame):
         
         self.findHighest_btn = wx.Button(panel, label="最高复杂度")
         self.findHighest_btn.Bind(wx.EVT_BUTTON, self.on_findHighest_frag)
-        self.findHighest_btn.SetToolTip("找到着色器左边列表选中材质的最高复杂度变体")
+        self.findHighest_btn.SetToolTip("找到左边列表选中 shader 的最高复杂度变体")
         self.findHighest_btn.SetBackgroundColour(wx.Colour(173, 216, 230))
         hbox2.Add(self.findHighest_btn, flag=wx.ALIGN_CENTER | wx.RIGHT, border=10)
         self.openFrag_btn = wx.Button(panel, label="打开frag变体")
@@ -617,16 +619,18 @@ class ShaderBrowser(wx.Frame):
         panel.SetSizer(vbox)
     
     def on_file_double_click(self, event):
-        """处理文件列表双击事件"""
-        selection = self.file_list.GetSelection()
-        if selection != wx.NOT_FOUND:
-            file_name = self.file_list.GetString(selection)
-            current_path = self.path_combo.GetValue()
-            if current_path:
-                full_path = os.path.join(current_path, file_name)
-                if os.name == 'nt':  # Windows系统
-                    os.startfile(full_path)
-                # wx.MessageBox(f"完整路径:\n{full_path}", "文件信息", wx.OK | wx.ICON_INFORMATION)
+        """处理文件列表双击事件：全选所有项目"""
+        # 获取列表中的所有项目数量
+        count = self.file_list.GetCount()
+        
+        if count > 0:
+            # 全选所有项目
+            for i in range(count):
+                self.file_list.SetSelection(i)
+            
+            self.status_bar.SetStatusText(f"已全选 {count} 个文件")
+        else:
+            self.status_bar.SetStatusText("列表为空，无法全选")
     
     def on_path_enter(self, event):
         """处理路径组合框回车事件"""
@@ -664,6 +668,27 @@ class ShaderBrowser(wx.Frame):
         
         dlg.Destroy()
     
+    def on_save_checkbox_changed(self, event):
+        """处理另存复选框状态改变事件"""
+        try:
+            # 读取现有配置
+            config = {}
+            if os.path.exists(self.CONFIG_FILE):
+                with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            
+            # 更新另存复选框状态
+            config["save_checkbox_enabled"] = self.save_checkbox.GetValue()
+            
+            # 保存配置
+            with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            status = "启用" if self.save_checkbox.GetValue() else "禁用"
+            self.status_bar.SetStatusText(f"另存选项已{status}")
+        except Exception as e:
+            self.status_bar.SetStatusText(f"保存另存选项配置失败: {str(e)}")
+    
     def save_path_to_config(self, path):
         """保存路径到配置文件（添加到历史记录）并更新ComboBox"""
         try:
@@ -691,6 +716,8 @@ class ShaderBrowser(wx.Frame):
             # 更新配置
             config["path_history"] = path_history
             config["last_path"] = path  # 保持向后兼容
+            # 保存另存复选框状态
+            config["save_checkbox_enabled"] = self.save_checkbox.GetValue()
             
             with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
@@ -727,6 +754,10 @@ class ShaderBrowser(wx.Frame):
                     path_history = config.get("path_history", [])
                     if path_history:
                         self.path_combo.SetItems(path_history)
+                    
+                    # 加载另存复选框状态
+                    save_checkbox_enabled = config.get("save_checkbox_enabled", True)
+                    self.save_checkbox.SetValue(save_checkbox_enabled)
                     
                     # 加载最后使用的路径
                     last_path = config.get("last_path", "")
