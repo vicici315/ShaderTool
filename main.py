@@ -359,7 +359,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "2.2"
+    VERSION = "2.3"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -480,6 +480,14 @@ class ShaderBrowser(wx.Frame):
         # 设置浅蓝色背景
         self.workFrag_btn.SetBackgroundColour(wx.Colour(173, 216, 230))  # 浅蓝色
         hbox2.Add(self.workFrag_btn, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
+        
+        self.shader_checkbox = wx.CheckBox(panel, label="Shader")
+        self.shader_checkbox.SetValue(True)  # 默认勾选
+        # 设置浅黄色背景
+        self.shader_checkbox.SetBackgroundColour(wx.Colour(255, 255, 224))  # 浅黄色
+        # 绑定状态改变事件，保存配置
+        self.shader_checkbox.Bind(wx.EVT_CHECKBOX, self.on_shader_checkbox_changed)
+        hbox2.Add(self.shader_checkbox, flag=wx.ALIGN_CENTER | wx.LEFT, border=10)
 
         self.delCom_btn = wx.Button(panel, label="X //", size=(50, -1))
         self.delCom_btn.SetToolTip("清除shader代码注释，保留顶部注释")
@@ -688,6 +696,29 @@ class ShaderBrowser(wx.Frame):
             self.status_bar.SetStatusText(f"另存选项已{status}")
         except Exception as e:
             self.status_bar.SetStatusText(f"保存另存选项配置失败: {str(e)}")
+    def on_shader_checkbox_changed(self, event):
+        """处理Shader复选框状态改变事件：勾选时只显示shader文件，取消勾选时显示所有文件"""
+        try:
+            # 保存配置
+            config = {}
+            if os.path.exists(self.CONFIG_FILE):
+                with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+
+            config["shader_checkbox_enabled"] = self.shader_checkbox.GetValue()
+
+            with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+
+            # 重新加载文件列表
+            current_path = self.path_combo.GetValue()
+            if current_path and os.path.isdir(current_path):
+                self.load_shader_files(current_path)
+
+            status = "仅显示Shader文件" if self.shader_checkbox.GetValue() else "显示所有文件"
+            self.status_bar.SetStatusText(f"Shader过滤已切换: {status}")
+        except Exception as e:
+            self.status_bar.SetStatusText(f"保存Shader选项配置失败: {str(e)}")
     
     def save_path_to_config(self, path):
         """保存路径到配置文件（添加到历史记录）并更新ComboBox"""
@@ -758,6 +789,10 @@ class ShaderBrowser(wx.Frame):
                     # 加载另存复选框状态
                     save_checkbox_enabled = config.get("save_checkbox_enabled", True)
                     self.save_checkbox.SetValue(save_checkbox_enabled)
+                    
+                    # 加载Shader复选框状态
+                    shader_checkbox_enabled = config.get("shader_checkbox_enabled", True)
+                    self.shader_checkbox.SetValue(shader_checkbox_enabled)
                     
                     # 加载最后使用的路径
                     last_path = config.get("last_path", "")
@@ -2483,16 +2518,27 @@ class ShaderBrowser(wx.Frame):
                         rel_path = os.path.relpath(full_path, directory)
                         cs_files.append(rel_path)
             
-            # 合并并排序文件列表
-            all_files = shader_files + cs_files
+            # 根据shader_checkbox状态决定显示哪些文件
+            shader_only = self.shader_checkbox.GetValue()
+            if shader_only:
+                all_files = shader_files
+            else:
+                all_files = shader_files + cs_files
+            
             if all_files:
                 all_files.sort()  # 按字母顺序排序
                 self.file_list.Set(all_files)
                 shader_count = len(shader_files)
                 cs_count = len(cs_files)
-                self.status_bar.SetStatusText(f"找到 {shader_count} 个 .shader 文件, {cs_count} 个 .cs 文件")
+                if shader_only:
+                    self.status_bar.SetStatusText(f"找到 {shader_count} 个 .shader 文件 (仅显示Shader)")
+                else:
+                    self.status_bar.SetStatusText(f"找到 {shader_count} 个 .shader 文件, {cs_count} 个 .cs 文件")
             else:
-                self.status_bar.SetStatusText("未找到 .shader 或 .cs 文件")
+                if shader_only:
+                    self.status_bar.SetStatusText("未找到 .shader 文件")
+                else:
+                    self.status_bar.SetStatusText("未找到 .shader 或 .cs 文件")
             
             # 无论是否找到.shader文件，都尝试加载frag文件
             self.load_frag_files(directory)
