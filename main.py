@@ -1,7 +1,7 @@
 import wx
 import os
 import json
-import sys
+# import sys
 
 class HelpDialog(wx.Dialog):
     """帮助对话框，显示Snipaste_help.png图片（使用Base64编码）"""
@@ -359,7 +359,7 @@ class CompileResultDialog(wx.Dialog):
 
 class ShaderBrowser(wx.Frame):
     # 版本号定义，方便更新
-    VERSION = "2.3"
+    VERSION = "2.4"
     CONFIG_FILE = "shader_browser_config.json"
     
     def __init__(self, parent, title):
@@ -369,21 +369,28 @@ class ShaderBrowser(wx.Frame):
 
         # 设置窗口图标
         self.SetIcon(self.load_icon())
-        
+
         # 初始化最高值跟踪变量
         self.max_cycles_sum = 0
         self.max_instructions = 0
-        
+
+        # 恢复保存的窗口位置和大小（必须在 InitUI/Centre 之前调用）
+        self._geometry_restored: bool = self.load_window_geometry()
+
         self.InitUI()
-        self.Centre()
+        if not self._geometry_restored:
+            self.Centre()
         self.Show()
-        
+
         # 加载保存的路径
         self.load_saved_path()
-        
+
         # 绑定F1键显示帮助
         self.Bind(wx.EVT_CHAR_HOOK, self.on_key_press)
-        
+
+        # 关闭时保存窗口位置/大小
+        self.Bind(wx.EVT_CLOSE, self.on_close_window)
+
         # 帮助窗口引用，用于限制只能打开一个帮助窗口
         self.help_dialog = None
     
@@ -821,7 +828,93 @@ class ShaderBrowser(wx.Frame):
                 self.load_shader_files(current_dir)
             except:
                 pass
-    
+
+    def load_window_geometry(self):
+        """从配置文件恢复主窗口的位置和大小。返回 True 表示已成功恢复。"""
+        try:
+            if not os.path.exists(self.CONFIG_FILE):
+                return False
+
+            with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            x = config.get("window_x")
+            y = config.get("window_y")
+            w = config.get("window_width")
+            h = config.get("window_height")
+
+            # 任一字段缺失或类型不合法都视为未恢复
+            if not all(isinstance(v, int) for v in (x, y, w, h)):
+                return False
+            if w <= 0 or h <= 0:
+                return False
+
+            # 校验位置是否落在任一可见显示器内，避免多屏断开后窗口跑到屏幕外
+            if not self._is_position_on_screen(x, y, w, h):
+                return False
+
+            self.SetPosition(wx.Point(x, y))
+            self.SetSize(wx.Size(w, h))
+            return True
+        except Exception:
+            return False
+
+    def save_window_geometry(self):
+        """将主窗口当前的位置和大小保存到配置文件。"""
+        try:
+            config = {}
+            if os.path.exists(self.CONFIG_FILE):
+                with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+
+            pos = self.GetPosition()
+            size = self.GetSize()
+            # 若窗口处于最小化/最大化状态，GetSize 可能返回全屏尺寸，跳过保存
+            if self.IsIconized() or self.IsMaximized():
+                return
+
+            config["window_x"] = int(pos.x)
+            config["window_y"] = int(pos.y)
+            config["window_width"] = int(size.x)
+            config["window_height"] = int(size.y)
+
+            with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+        except Exception:
+            # 静默失败，不影响窗口关闭
+            pass
+
+    def _is_position_on_screen(self, x, y, w, h):
+        """判断 (x, y, w, h) 表示的窗口与任一显示器是否有合理重叠（避免窗口跑到屏幕外）。"""
+        try:
+            displays = [wx.Display(i) for i in range(wx.Display.GetCount())]
+        except Exception:
+            return True  # 无法判定时放行，保持旧行为
+
+        # 窗口矩形
+        win_rect = (x, y, x + max(w, 1), y + max(h, 1))
+        for d in displays:
+            area = d.GetClientArea()
+            disp_rect = (area.x, area.y, area.x + area.width, area.y + area.height)
+            # 矩形相交面积
+            ix1 = max(win_rect[0], disp_rect[0])
+            iy1 = max(win_rect[1], disp_rect[1])
+            ix2 = min(win_rect[2], disp_rect[2])
+            iy2 = min(win_rect[3], disp_rect[3])
+            if ix2 > ix1 and iy2 > iy1:
+                # 至少要求相交区域覆盖窗口左上角 100x100 的可拖动区域
+                overlap_w = ix2 - ix1
+                overlap_h = iy2 - iy1
+                if overlap_w >= 100 and overlap_h >= 100:
+                    return True
+        return False
+
+    def on_close_window(self, event):
+        """主窗口关闭时保存窗口位置和大小，然后真正关闭。"""
+        self.save_window_geometry()
+        event.Skip()
+        self.Destroy()
+
     def on_frag_click(self, event):
         """处理frag列表单击事件：计算并显示Longest Path Cycles总和"""
         selection = self.frag_list.GetSelection()
@@ -1747,54 +1840,56 @@ class ShaderBrowser(wx.Frame):
     
     def remove_other_comments(self, content):
         """
-        移除包含<summary>和</summary>标签的整行注释
+        移除注释中多余的<summary>和</summary>标签
+        - 单行同时包含 <summary> 和 </summary>：仅删除标签本身，保留中间注释内容
+        - 多行只包含其中一个标签：删除整行
         """
         if not content:
             return content
+
+        import re
 
         lines = content.splitlines(keepends=True)
         result_lines = []
 
         for line in lines:
-            # 检查行中是否包含<summary>或</summary>标签
-            # 同时确保这些标签在注释中
             line_lower = line.lower()
 
-            # 检查是否是包含这些标签的注释行
-            is_comment_line = False
-            has_summary_tag = False
+            has_open = '<summary>' in line_lower
+            has_close = '</summary>' in line_lower
 
-            # 检查是否包含summary标签
-            if '<summary>' in line_lower or '</summary>' in line_lower:
-                has_summary_tag = True
-
-                # 检查是否在注释中
-                # 查找注释符号的位置
-                single_comment_pos = line.find('//')
-                multi_comment_start = line.find('/*')
-
-                # 查找标签的位置
-                summary_start_pos = line_lower.find('<summary>')
-                summary_end_pos = line_lower.find('</summary>')
-                tag_pos = -1
-
-                if summary_start_pos != -1:
-                    tag_pos = summary_start_pos
-                elif summary_end_pos != -1:
-                    tag_pos = summary_end_pos
-
-                # 判断标签是否在注释中
-                if single_comment_pos != -1 and tag_pos > single_comment_pos:
-                    is_comment_line = True
-                elif multi_comment_start != -1 and tag_pos > multi_comment_start:
-                    is_comment_line = True
-
-            # 如果是包含summary标签的注释行，跳过该行
-            if has_summary_tag and is_comment_line:
+            if not (has_open or has_close):
+                result_lines.append(line)
                 continue
 
-            # 否则保留该行
-            result_lines.append(line)
+            # 检查标签是否在注释中（// 或 /* ... */ 之内）
+            single_comment_pos = line.find('//')
+            multi_comment_start = line.find('/*')
+
+            if has_open:
+                tag_pos = line_lower.find('<summary>')
+            else:
+                tag_pos = line_lower.find('</summary>')
+
+            in_single_comment = single_comment_pos != -1 and tag_pos > single_comment_pos
+            in_multi_comment = multi_comment_start != -1 and tag_pos > multi_comment_start
+
+            if not (in_single_comment or in_multi_comment):
+                # 标签不在注释中（例如出现在字符串里），原样保留
+                result_lines.append(line)
+                continue
+
+            if has_open and has_close:
+                # 单行同时含 <summary> 和 </summary>：仅移除这两个标签，保留中间内容
+                # 计算结束标签的真实位置（用原始 line 而非 line_lower）
+                close_pos = line.lower().find('</summary>')
+                open_pos = line.lower().find('<summary>')
+                # 保留行首到 <summary> 之前，以及 </summary> 之后到行尾
+                preserved = line[:open_pos] + line[open_pos + len('<summary>'):close_pos].lstrip() + line[close_pos + len('</summary>'):]
+                result_lines.append(preserved)
+            else:
+                # 仅有单个标签的整行：删除整行
+                continue
 
         # 重新组合内容
         result = ''.join(result_lines)
